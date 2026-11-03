@@ -12,7 +12,7 @@ Kontrollerat 2026-11-03 mot faktiska paketindex och release-metadata. Ingen stab
 | Radzen.Blazor | 12.1.10 |
 | OpenTelemetry | 1.20.1 |
 | Leaflet | 1.9.4 |
-| PostgreSQL bas | 17-bookworm, låst OCI-digest i Dockerfile |
+| PostgreSQL bas | 18-bookworm, låst OCI-digest i Dockerfile |
 | PostGIS vid lokalt verifieringsbygge | 3.7, från PostgreSQL:s Debian-paketförråd |
 
 Npgsql RC3:s nuspec kräver exakt EF RC3 ovan. Radzen har net10-assets som används
@@ -25,7 +25,11 @@ Leaflet är låst i npm-manifest/lockfil och distributionen är incheckad lokalt
 inklusive BSD-licensen. Node krävs bara vid uppdatering, inte i runtime.
 
 Containerbaser är digest-låsta. Taggen är läsbar dokumentation, digest är identitet.
-PostGIS installeras från PostgreSQL-basens signerade Debian-paketförråd vid bygge.
+PostGIS installeras från PostgreSQL-basens signerade Debian-paketförråd vid bygge,
+med paket för samma PostgreSQL-majorversion. PostgreSQL 18:s `PGDATA` ligger som
+standard i `/var/lib/postgresql/18/docker`; Compose monterar därför datavolymen
+på `/var/lib/postgresql`. En uppgradering från 17 kräver separat datamigrering
+och verifierad backup; se [driftguiden](operations.md#första-lokala-driftprovet).
 APT-transitiva paket är **inte byte-reproducerbart låsta**; publicerade release-images
 ska därför användas via digest för identisk drift. Uppdatera och bygg om regelbundet
 för säkerhetsfixar, med ny version och granskad diff.
