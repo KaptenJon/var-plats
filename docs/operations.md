@@ -24,7 +24,8 @@ Aspire/dashboard ska inte driftsättas på Pi.
 `deploy/compose.yml` är ARM64-inriktad och binder webbporten enbart till loopback.
 Databasen har ingen publicerad port. `postgis/postgis:17-3.5` annonserade bara
 amd64 vid kontrollen; därför byggs PostGIS från PostgreSQL + dess Debian-paket,
-inte genom ett felaktigt ARM64-antagande.
+inte genom ett felaktigt ARM64-antagande. PostGIS-paketet måste ha samma
+PostgreSQL-majorversion som basimagen.
 
 Från reporoten på Pi, med POSIX-shell:
 
@@ -50,8 +51,17 @@ curl --fail http://localhost:8080/health/ready
 
 Byt `WEB_IMAGE` och `DB_IMAGE` i `.env` till release-imagernas **digests** och använd
 `up -d --no-build` när en granskad version har publicerats.
-Databasen initieras endast vid en tom volym. Radera aldrig volymen för att
-"uppgradera". Följ en separat granskad schemaändring vid framtida releaser.
+Databasen initieras endast vid en tom datakatalog. PostgreSQL 18 använder
+`/var/lib/postgresql/18/docker` som standard för `PGDATA`; därför monteras
+Compose-volymen på `/var/lib/postgresql`. PostgreSQL 17 använde
+`/var/lib/postgresql/data`. Att byta image-majorversion uppgraderar inte klustret:
+en gammal volym innehåller PostgreSQL 17-data under `data/`, medan PostgreSQL 18
+kan initiera ett nytt kluster under `18/docker`. Gör en separat, granskad
+majoruppgradering med verifierad backup och `pg_dump`/`pg_restore` eller en
+validerad `pg_upgrade`-procedur till en ny datavolym. Verifiera rapportantal,
+koordinater och PostGIS innan trafik flyttas. Behåll den gamla volymen tills
+återställning och drift är verifierade; radera eller återanvänd den aldrig som
+uppgraderingsmetod.
 
 Anslut via lokal SSH-tunnel vid prov. Före publik läsning krävs domän,
 `PUBLIC_HOST`, TLS-reverse-proxy, brandvägg och övervakning. Proxyn ligger utanför
