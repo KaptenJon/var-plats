@@ -1,0 +1,9 @@
+{
+  "name": "var-plats-static-assets",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Versionslåst källa för vendorerad Leaflet; Node behövs inte vid .NET-körning.",
+  "dependencies": {
+    "leaflet": "1.9.4"
+  }
+}

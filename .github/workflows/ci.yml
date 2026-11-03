@@ -1,0 +1,61 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main, "kaptenjon-*"]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - run: dotnet restore --locked-mode
+      - run: dotnet build -c Release --no-restore
+      - run: dotnet test -c Release --no-build
+      - run: dotnet format --verify-no-changes --no-restore
+      - name: JavaScript syntax
+        run: |
+          node --check src/VarPlats.Web/wwwroot/map.js
+          node --check src/VarPlats.Web/wwwroot/service-worker.js
+      - name: Validate Compose without real secrets
+        env:
+          DATABASE_CONNECTION: Host=db;Database=varplats;Username=varplats;Password=ci-placeholder-only
+        run: docker compose -f deploy/compose.yml config --quiet
+  arm64-smoke:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build ARM64 images and exercise PostGIS
+        shell: bash
+        env:
+          DATABASE_CONNECTION: Host=db;Database=varplats;Username=varplats;Password=ci-placeholder-only
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/secrets
+          printf '%s' 'ci-placeholder-only' > deploy/secrets/db_password
+          trap 'docker compose -f deploy/compose.yml down -v' EXIT
+          docker compose -f deploy/compose.yml up -d --build
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://localhost:8080/health/ready; then break; fi
+            sleep 3
+          done
+          curl --fail http://localhost:8080/health/ready
+          curl --fail http://localhost:8080/api/reports
+          docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
+            -c "SELECT PostGIS_Version();" \
+            -c "INSERT INTO reports VALUES ('00000000-0000-0000-0000-000000000003','Test på ARM64','Syntetisk CI-rapport utan personuppgifter',0,ST_SetSRID(ST_Point(18.06,59.32),4326)::geography,now(),0);"
+          curl --fail --silent http://localhost:8080/api/reports | grep 'Test på ARM64'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/api/reports)" = "405"

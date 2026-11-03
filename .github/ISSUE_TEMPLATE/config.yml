@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Säkerhetsrapportering
+    url: https://github.com/KaptenJon/var-plats/blob/main/SECURITY.md
+    about: Läs den privata rapportvägen innan du delar en säkerhetsbrist.

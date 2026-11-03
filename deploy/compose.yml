@@ -1,0 +1,55 @@
+name: varplats
+services:
+  db:
+    image: ${DB_IMAGE:-varplats-postgis:local}
+    build:
+      context: ./postgis
+    platform: linux/arm64
+    environment:
+      POSTGRES_DB: varplats
+      POSTGRES_USER: varplats
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U varplats -d varplats"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+  web:
+    image: ${WEB_IMAGE:-varplats-web:local}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    platform: linux/arm64
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      AllowedHosts: ${PUBLIC_HOST:-localhost}
+      ConnectionStrings__varplats: ${DATABASE_CONNECTION:?Set DATABASE_CONNECTION in the untracked .env file}
+      Map__TileUrl: ${TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - dataprotection:/home/app/.aspnet/DataProtection-Keys
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+secrets:
+  db_password:
+    file: ./secrets/db_password
+volumes:
+  postgres-data:
+  dataprotection:

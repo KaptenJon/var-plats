@@ -1,0 +1,242 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@inject IReportStore Store
+@inject ReportingMode Mode
+@inject Microsoft.Extensions.Options.IOptions<MapOptions> MapSettings
+@inject IJSRuntime JS
+@inject ILogger<Home> Logger
+
+<PageTitle>Vår plats – upptäck, dokumentera, förbättra</PageTitle>
+<!-- THESIS: Platsen är arbetsytan, inte en dashboard. OWN-WORLD: Vit fältyta, skogsgrön orientering, raka listor.
+STORY: Se exempel, välj plats, dokumentera en observation. FIRST VIEWPORT: Verktygsrad över stor karta och läsbar sidolista.
+FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad effekt eller poäng. -->
+<a class="skip-link" href="#reports">Hoppa till rapporterna</a>
+<header class="topbar">
+    <a class="brand" href="/" aria-label="Vår plats, startsida"><span class="brand-mark" aria-hidden="true">⌖</span> Vår plats<span class="prototype">Prototyp</span></a>
+    <a href="/om">Om tjänsten</a>
+</header>
+<main>
+    <section class="workspace-heading" aria-labelledby="page-title">
+        <div><h1 id="page-title">En bättre plats börjar här.</h1><p>Upptäck det som behöver omsorg i vår gemensamma miljö.</p></div>
+        @if (Mode.CanWrite)
+        {
+            <RadzenButton Text="Rapportera en plats" Icon="add_location_alt" Click="@OpenForm" />
+        }
+    </section>
+    <div class="mode-notice" role="status">
+        @if (Mode.Demo)
+        {
+            <strong>Lokal demo</strong><span>Påhittade exempel. Dina rapporter finns bara i den här anslutningen och försvinner när den avslutas.</span>
+        }
+        else if (Mode.LocalWrites)
+        {
+            <strong>Lokal utveckling</strong><span>Rapporter sparas i din utvecklingsdatabas. Använd inga personuppgifter.</span>
+        }
+        else
+        {
+            <strong>Förhandsversion · endast läsning</strong><span>Konton, åtgärder, bekräftelser och bevakning är inte öppnade ännu.</span>
+        }
+    </div>
+    <div class="workspace">
+        <section class="map-panel" aria-label="Karta över rapporter">
+            <div id="map" aria-label="Interaktiv karta. Rapporter finns också i listan." role="region"></div>
+            <div class="map-caption">Stockholm · startområde, inte din position</div>
+            @if (showForm)
+            {
+                <div class="map-instruction">Klicka på kartan för att placera din rapport, eller ange koordinater i formuläret.</div>
+            }
+        </section>
+        <aside id="reports" class="report-panel" aria-label="Rapporter och rapportformulär">
+            @if (error is not null)
+            {
+                <div class="error" role="alert">@error <button class="text-button" @onclick="Reload">Försök igen</button></div>
+            }
+            @if (showForm)
+            {
+                <div class="panel-heading"><h2>Vad har du sett?</h2><button class="text-button" @onclick="CloseForm">Avbryt</button></div>
+                <p class="small">Beskriv platsen, inte personer. Lägg inte till namn, registreringsnummer eller kontaktuppgifter.</p>
+                <EditForm Model="draft" OnValidSubmit="Save" FormName="report">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+                    <label for="title">Rubrik</label>
+                    <InputText id="title" @bind-Value="draft.Title" maxlength="100" placeholder="Till exempel skräp vid gångvägen" />
+                    <label for="category">Kategori</label>
+                    <InputSelect id="category" @bind-Value="draft.Category">
+                        <option value="@ReportCategory.Litter">Skräp</option>
+                        <option value="@ReportCategory.Broken">Trasigt</option>
+                        <option value="@ReportCategory.Other">Annat</option>
+                    </InputSelect>
+                    <label for="description">Beskrivning</label>
+                    <InputTextArea id="description" @bind-Value="draft.Description" maxlength="1000" rows="4" />
+                    <div class="coordinate-fields">
+                        <div><label for="latitude">Latitud</label><InputNumber id="latitude" @bind-Value="draft.Latitude" step="any" /></div>
+                        <div><label for="longitude">Longitud</label><InputNumber id="longitude" @bind-Value="draft.Longitude" step="any" /></div>
+                    </div>
+                    <p class="safety">Rör inte elinstallationer, trafikmiljö, kemikalier, sprutor eller okänt avfall. Vid akut fara: ring 112.</p>
+                    <RadzenButton ButtonType="ButtonType.Submit" Text="@(saving ? "Sparar…" : Mode.Demo ? "Spara i lokal demo" : "Spara i utvecklingsdatabas")" Disabled="saving" Style="width: 100%" />
+                </EditForm>
+            }
+            else
+            {
+                <div class="panel-heading"><h2>Platser att uppmärksamma</h2><span class="count">@reports.Count</span></div>
+                <p class="small">Senast rapporterade · högst 200 platser</p>
+                <label for="filter">Visa kategori</label>
+                <select id="filter" @bind="filter" @bind:after="SyncMap">
+                    <option value="">Alla kategorier</option><option value="Litter">Skräp</option><option value="Broken">Trasigt</option><option value="Other">Annat</option>
+                </select>
+                @if (loading)
+                {
+                    <p role="status">Hämtar rapporter…</p>
+                }
+                else if (!VisibleReports.Any())
+                {
+                    <p class="empty">Här finns inga rapporter att visa. @((Mode.CanWrite) ? "Lägg till en första observation." : "Prova en annan kategori eller återkom senare.")</p>
+                }
+                else
+                {
+                    <ul class="report-list">
+                        @foreach (var report in VisibleReports)
+                        {
+                            <li>
+                                <button class="report-item @(selected == report.Id ? "selected" : "")" aria-pressed="@(selected == report.Id)" @onclick="() => Select(report)">
+                                    <span class="report-symbol" aria-hidden="true">@(report.Category == ReportCategory.Litter ? "♧" : "◇")</span>
+                                    <span><span class="report-category">@CategoryName(report.Category) · Rapporterad</span><strong>@report.Title</strong><span class="report-description">@report.Description</span></span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+                <div class="next-step"><h3>Från observation till omtanke</h3><p>Dokumenterade åtgärder och andras bekräftelser är nästa steg. Inga poäng delas ut i den här versionen.</p></div>
+            }
+            <p class="small official-note">Vår plats är inte en officiell kommunal felanmälan. Kontakta ansvarig aktör när det behövs.</p>
+        </aside>
+    </div>
+    <p class="save-status" role="status">@status</p>
+</main>
+<footer><span>Gemensamma platser. Gemensam omtanke.</span><a href="/om">Integritet, säkerhet och utkast till villkor</a><a href="https://www.openstreetmap.org/fixthemap">Rapportera kartfel</a></footer>
+<div id="blazor-error-ui" role="alert">Anslutningen har avbrutits eller ett fel uppstod. <a href="/">Ladda om</a>. Osparad lokal demo kan försvinna.</div>
+
+@code {
+    private IReadOnlyList<Report> reports = [];
+    private ReportDraft draft = new();
+    private bool showForm, saving, loading = true;
+    private string? error, status;
+    private string filter = "";
+    private Guid? selected;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<Home>? callback;
+    private IEnumerable<Report> VisibleReports => reports.Where(report => filter.Length == 0 || report.Category.ToString() == filter);
+
+    protected override async Task OnInitializedAsync() => await LoadReports();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./map.js");
+            callback = DotNetObjectReference.Create(this);
+            await module.InvokeVoidAsync("initialize", "map", MapSettings.Value, callback);
+            await SyncMap();
+        }
+        catch (JSException exception)
+        {
+            Logger.LogError(exception, "Kartan kunde inte startas.");
+            error = "Kartan kunde inte laddas. Rapportlistan fungerar fortfarande. Ladda om sidan för att försöka igen.";
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadReports()
+    {
+        loading = true;
+        error = null;
+        try { reports = await Store.ListAsync(); }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Rapporter kunde inte hämtas.");
+            error = "Rapporter kunde inte hämtas. Kontrollera databasanslutningen och försök igen.";
+        }
+        finally { loading = false; }
+    }
+
+    private async Task Reload() { await LoadReports(); await SyncMap(); }
+    private Task SyncMap() => InvokeMap("setReports", VisibleReports);
+    private async Task InvokeMap(string method, params object?[] arguments)
+    {
+        if (module is null) return;
+        try { await module.InvokeVoidAsync(method, arguments); }
+        catch (JSException exception)
+        {
+            Logger.LogWarning(exception, "Kartkommandot {MapCommand} misslyckades.", method);
+            error = "Kartan kunde inte uppdateras. Använd listan och koordinatfälten, eller ladda om sidan.";
+        }
+    }
+    private async Task OpenForm()
+    {
+        showForm = true;
+        status = null;
+        await InvokeMap("setPicking", true);
+    }
+    private async Task CloseForm()
+    {
+        showForm = false;
+        await InvokeMap("setPicking", false);
+    }
+    [JSInvokable]
+    public Task TileLoadingFailed()
+    {
+        Logger.LogWarning("Kartleverantörens tiles kunde inte laddas.");
+        error = "Kartbakgrunden kunde inte laddas. Rapportlistan och koordinatfälten fungerar fortfarande.";
+        return InvokeAsync(StateHasChanged);
+    }
+    [JSInvokable]
+    public Task PickLocation(double latitude, double longitude)
+    {
+        if (!showForm) return Task.CompletedTask;
+        draft.Latitude = Math.Round(latitude, 6);
+        draft.Longitude = Math.Round(longitude, 6);
+        return InvokeAsync(StateHasChanged);
+    }
+    private async Task Select(Report report)
+    {
+        selected = report.Id;
+        await InvokeMap("focusReport", report.Id, report.Latitude, report.Longitude);
+    }
+    private async Task Save()
+    {
+        if (!Mode.CanWrite || saving) return;
+        saving = true;
+        error = null;
+        try
+        {
+            await Store.AddAsync(draft);
+            draft = new();
+            filter = "";
+            await CloseForm();
+            await LoadReports();
+            await SyncMap();
+            status = Mode.Demo ? "Rapporten är sparad i din lokala demo, inte publicerad." : "Rapporten är sparad i din utvecklingsdatabas.";
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or ValidationException)
+        {
+            Logger.LogError(exception, "Rapport kunde inte sparas.");
+            error = "Rapporten kunde inte sparas. Kontrollera uppgifterna och databasanslutningen innan du försöker igen.";
+        }
+        finally { saving = false; }
+    }
+    private static string CategoryName(ReportCategory category) => category switch
+    {
+        ReportCategory.Litter => "Skräp", ReportCategory.Broken => "Trasigt", _ => "Annat"
+    };
+    public async ValueTask DisposeAsync()
+    {
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("dispose"); await module.DisposeAsync(); }
+            catch (JSDisconnectedException) { /* Circuit already closed; no browser remains to clean up. */ }
+        }
+        callback?.Dispose();
+    }
+}

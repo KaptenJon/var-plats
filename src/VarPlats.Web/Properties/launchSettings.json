@@ -1,0 +1,22 @@
+{
+  "profiles": {
+    "demo": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5180",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Reporting__Demo": "true"
+      }
+    },
+    "database": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5180",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Reporting__LocalWrites": "true"
+      }
+    }
+  }
+}

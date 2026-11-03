@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VarPlats.Core/VarPlats.Core.csproj" />
+    <Project Path="src/VarPlats.ServiceDefaults/VarPlats.ServiceDefaults.csproj" />
+    <Project Path="src/VarPlats.Web/VarPlats.Web.csproj" />
+    <Project Path="src/VarPlats.AppHost/VarPlats.AppHost.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VarPlats.Tests/VarPlats.Tests.csproj" />
+  </Folder>
+</Solution>

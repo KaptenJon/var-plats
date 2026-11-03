@@ -1,0 +1,24 @@
+name: Felrapport
+description: Beskriv ett reproducerbart fel utan personuppgifter eller hemligheter.
+body:
+  - type: markdown
+    attributes:
+      value: "Säkerhetsbrister ska rapporteras privat enligt SECURITY.md. Använd bara syntetiska testdata."
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steg för att återskapa
+      description: Vilket läge, version och vilka steg?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Förväntat och faktiskt resultat
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Miljö
+      description: SDK, webbläsare, OS och eventuell Pi-modell. Inga privata adresser.

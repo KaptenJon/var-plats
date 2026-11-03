@@ -1,0 +1,19 @@
+name: Förslag
+description: Föreslå en avgränsad förbättring.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Vilket användarbehov vill du lösa?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Föreslagen lösning och avgränsning
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Integritet, säkerhet och risker

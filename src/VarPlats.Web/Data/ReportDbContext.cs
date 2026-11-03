@@ -1,0 +1,68 @@
+using Microsoft.EntityFrameworkCore;
+using NetTopologySuite.Geometries;
+using VarPlats.Core;
+
+namespace VarPlats.Web.Data;
+
+public sealed class ReportEntity
+{
+    public Guid Id { get; set; }
+    public required string Title { get; set; }
+    public required string Description { get; set; }
+    public ReportCategory Category { get; set; }
+    public required Point Location { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public ReportStatus Status { get; set; }
+}
+
+public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options) : DbContext(options)
+{
+    public DbSet<ReportEntity> Reports => Set<ReportEntity>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.HasPostgresExtension("postgis");
+        modelBuilder.Entity<ReportEntity>(entity =>
+        {
+            entity.ToTable("reports");
+            entity.HasKey(report => report.Id);
+            entity.Property(report => report.Title).HasMaxLength(100);
+            entity.Property(report => report.Description).HasMaxLength(1000);
+            entity.Property(report => report.Location).HasColumnType("geography (point, 4326)");
+            entity.HasIndex(report => report.Location).HasMethod("gist");
+        });
+    }
+}
+
+public sealed class DatabaseReportStore(
+    IDbContextFactory<ReportDbContext> factory, ReportingMode mode) : IReportStore
+{
+    public async Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var entities = await db.Reports.AsNoTracking().OrderByDescending(report => report.CreatedAt)
+            .Take(200).ToListAsync(cancellationToken);
+        return entities.Select(report => new Report(report.Id, report.Title, report.Description,
+            report.Category, report.Location.Y, report.Location.X, report.CreatedAt, report.Status)).ToArray();
+    }
+
+    public async Task<Report> AddAsync(ReportDraft draft, CancellationToken cancellationToken = default)
+    {
+        if (!mode.LocalWrites)
+            throw new InvalidOperationException("Publika skrivningar är inte aktiverade.");
+        var report = draft.ToReport();
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        db.Reports.Add(new()
+        {
+            Id = report.Id,
+            Title = report.Title,
+            Description = report.Description,
+            Category = report.Category,
+            CreatedAt = report.CreatedAt,
+            Status = report.Status,
+            Location = new(report.Longitude, report.Latitude) { SRID = 4326 }
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        return report;
+    }
+}

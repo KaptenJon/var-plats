@@ -1,0 +1,37 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dotnet-preview:
+        patterns:
+          - "Microsoft.EntityFrameworkCore*"
+          - "Microsoft.AspNetCore*"
+          - "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"
+          - "Npgsql.EntityFrameworkCore*"
+      aspire:
+        patterns:
+          - "Aspire.*"
+      telemetry:
+        patterns:
+          - "OpenTelemetry.*"
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /deploy/postgis
+    schedule:
+      interval: weekly
