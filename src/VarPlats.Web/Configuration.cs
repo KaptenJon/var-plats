@@ -14,6 +14,14 @@ public sealed class MapOptions
     public string Attribution { get; set; } = "© OpenStreetMap contributors";
 }
 
+public sealed class MailjetOptions
+{
+    public string ApiKey { get; set; } = "";
+    public string ApiSecret { get; set; } = "";
+    public string SenderEmail { get; set; } = "";
+    public string SenderName { get; set; } = "Vår plats";
+}
+
 public sealed class PublicExceptionHandler(ILogger<PublicExceptionHandler> logger) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext context, Exception exception, CancellationToken cancellationToken)

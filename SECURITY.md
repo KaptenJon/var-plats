@@ -20,6 +20,16 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   Ingen publik rapport-POST-route finns, och databasen kräver separat manuell grant.
 - Adminborttagning raderar rapporten permanent. Återställning och granskningshistorik
   saknas ännu, så funktionen är inte redo att öppnas för riktiga användare.
+- Autentisering, e-postregistrering och passkeys är avstängda som standard.
+  Aktivering lagrar verifierad e-post, externa inloggnings-ID:n och passkey-data.
+  Konton länkas bara uttryckligen under en inloggad session; e-postmatchning länkar
+  aldrig automatiskt. E-poståterställning ger en engångslänk och en kortlivad,
+  begränsad session som inte får rapportera, moderera eller länka leverantörer
+  innan en ny passkey har lagts till.
+- Identity-tabeller och passkeydata kräver den manuella migrationen
+  `deploy/identity-schema.sql`; skrivbehörighet kräver separat
+  `deploy/pi-identity-role.sql`. Ingendera ska köras innan backup, återställningsprov,
+  integritets-/retentionsbeslut och uttryckligt lanseringsbeslut.
 - Lokal skrivning kräver Development och loopback. Aldrig en publik dev-proxy.
 - Gemensam servervalidering, EF-parametrisering, textkodade Leaflet-popupfält
   och Blazors normala HTML-kodning. Inget användarinnehåll går till `MarkupString`.
@@ -48,7 +58,8 @@ Poäng behöver självbekräftelseförbud, oberoende bekräftelse, historik, sp�
 bedrägeribedömning och återkallelse. Organisationers områden och dataåtkomst
 behöver separat behörighetsmodell. Betalning tillkommer först efter avtal/analys.
 
-Driften behöver TLS, kända proxies, SELECT-only runtime-roll, krypterade backups,
+Driften behöver TLS, kända proxies, SELECT-only runtime-roll när identitet är av,
+begränsad Identity-grant när autentisering uttryckligen aktiveras, krypterade backups,
 hemlighetshantering, patchpolicy, lastprov, incidentplan och juridiska beslut.
 Exceptionloggar kan innehålla infrastrukturdataläckor: kontrollera sink, åtkomst
 och retention; aktivera aldrig EF sensitive-data logging i drift.

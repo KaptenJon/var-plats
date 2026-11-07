@@ -1,0 +1,35 @@
+@page "/auth/email/confirm"
+@using Microsoft.AspNetCore.Components
+@inject IConfiguration Configuration
+
+<PageTitle>Bekräfta e-post – Vår plats</PageTitle>
+<main class="document">
+    <h1>Bekräfta e-postadress</h1>
+    @if (!Configuration.GetValue<bool>("Authentication:Enabled"))
+    {
+        <p role="status">Kontoregistrering är inte aktiverad i den här miljön.</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(UserId) && !string.IsNullOrWhiteSpace(Token))
+    {
+        <p>Bekräfta adressen för att fortsätta skapa kontot och lägga till en passkey.</p>
+        <form action="/auth/email/confirm" method="post">
+            <AntiforgeryToken />
+            <input type="hidden" name="userId" value="@UserId" />
+            <input type="hidden" name="token" value="@Token" />
+            <button type="submit">Bekräfta e-postadress</button>
+        </form>
+    }
+    else
+    {
+        <p class="error" role="alert">Bekräftelselänken är ogiltig. Begär en ny från registreringssidan.</p>
+    }
+    <p><a href="/register">Tillbaka till registrering</a></p>
+</main>
+
+@code {
+    [SupplyParameterFromQuery(Name = "userId")]
+    private string? UserId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "token")]
+    private string? Token { get; set; }
+}

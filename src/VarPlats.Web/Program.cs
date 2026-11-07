@@ -3,12 +3,15 @@ using System.Net.Http.Headers;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Radzen;
 using VarPlats.Core;
@@ -29,9 +32,14 @@ if (publicWrites && (demo || localWrites))
     throw new InvalidOperationException("Publika skrivningar kan inte kombineras med demo eller lokala skrivningar.");
 if (publicWrites && !authenticationEnabled)
     throw new InvalidOperationException("Reporting:PublicWrites kräver Authentication:Enabled.");
+if (authenticationEnabled && demo)
+    throw new InvalidOperationException("Autentisering kräver databasläge och kan inte användas med Reporting:Demo.");
 
 var adminGitHubId = builder.Configuration["Authentication:AdminGitHubId"];
 var trustedProxyValue = builder.Configuration["Authentication:TrustedProxyIp"];
+var passkeyServerDomain = builder.Configuration["Authentication:Passkeys:ServerDomain"];
+var passkeyOrigins = builder.Configuration.GetSection("Authentication:Passkeys:Origins").Get<string[]>() ?? [];
+var publicBaseUrl = builder.Configuration["Authentication:PublicBaseUrl"];
 IPAddress? trustedProxyIp = null;
 if (!string.IsNullOrWhiteSpace(trustedProxyValue) && !IPAddress.TryParse(trustedProxyValue, out trustedProxyIp))
     throw new InvalidOperationException("Authentication:TrustedProxyIp must be a single IP address.");
@@ -42,7 +50,12 @@ if (authenticationEnabled)
         "Authentication:Google:ClientId",
         "Authentication:Google:ClientSecret",
         "Authentication:GitHub:ClientId",
-        "Authentication:GitHub:ClientSecret"
+        "Authentication:GitHub:ClientSecret",
+        "Authentication:Mailjet:ApiKey",
+        "Authentication:Mailjet:ApiSecret",
+        "Authentication:Mailjet:SenderEmail",
+        "Authentication:Passkeys:ServerDomain",
+        "Authentication:PublicBaseUrl"
     };
     if (requiredSettings.Any(key => string.IsNullOrWhiteSpace(builder.Configuration[key]))
         || !long.TryParse(adminGitHubId, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedAdminId)
@@ -50,6 +63,18 @@ if (authenticationEnabled)
         throw new InvalidOperationException(
             "Google/GitHub OAuth credentials, Authentication:AdminGitHubId, and Authentication:TrustedProxyIp are required.");
     adminGitHubId = parsedAdminId.ToString(CultureInfo.InvariantCulture);
+
+    if (!Uri.TryCreate(publicBaseUrl, UriKind.Absolute, out var publicUri)
+        || publicUri.Scheme != Uri.UriSchemeHttps
+        || publicUri.AbsolutePath != "/"
+        || !string.IsNullOrEmpty(publicUri.UserInfo)
+        || !string.IsNullOrEmpty(publicUri.Query)
+        || !string.IsNullOrEmpty(publicUri.Fragment)
+        || !string.Equals(publicUri.Host, passkeyServerDomain, StringComparison.OrdinalIgnoreCase)
+        || !passkeyOrigins.Contains(publicUri.GetLeftPart(UriPartial.Authority), StringComparer.OrdinalIgnoreCase)
+        || passkeyOrigins.Any(origin => !IsAllowedPasskeyOrigin(origin, passkeyServerDomain!)))
+        throw new InvalidOperationException(
+            "Authentication:PublicBaseUrl and Passkeys settings must use HTTPS and an exact allowed origin.");
 }
 
 builder.Services.AddSingleton(new ReportingMode(demo, localWrites, publicWrites));
@@ -64,8 +89,14 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         options.KnownProxies.Add(trustedProxyIp);
     options.ForwardLimit = 1;
 });
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options =>
+if (authenticationEnabled)
+{
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultScheme = IdentityConstants.ApplicationScheme;
+        options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
+    }).AddIdentityCookies();
+    builder.Services.ConfigureApplicationCookie(options =>
     {
         options.Cookie.Name = "__Host-varplats-auth";
         options.Cookie.HttpOnly = true;
@@ -76,13 +107,83 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.SlidingExpiration = true;
         options.LoginPath = "/login";
     });
+    builder.Services.Configure<CookieAuthenticationOptions>(IdentityConstants.ExternalScheme, options =>
+    {
+        options.Cookie.Name = "__Host-varplats-external";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+        options.Cookie.Path = "/";
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
+    });
+    builder.Services.AddIdentityCore<IdentityUser<Guid>>(options =>
+    {
+        options.SignIn.RequireConfirmedEmail = true;
+        options.User.RequireUniqueEmail = true;
+        options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
+        options.Lockout.AllowedForNewUsers = true;
+    })
+    .AddRoles<IdentityRole<Guid>>()
+    .AddEntityFrameworkStores<ReportDbContext>()
+    .AddSignInManager()
+    .AddDefaultTokenProviders();
+    builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
+        options.TokenLifespan = TimeSpan.FromHours(1));
+    builder.Services.Configure<IdentityPasskeyOptions>(options =>
+    {
+        options.ServerDomain = passkeyServerDomain!;
+        options.ResidentKeyRequirement = "required";
+        options.UserVerificationRequirement = "preferred";
+        options.ValidateOrigin = context => ValueTask.FromResult(
+            !context.CrossOrigin
+            && passkeyOrigins.Contains(context.Origin, StringComparer.OrdinalIgnoreCase));
+    });
+    builder.Services.AddOptions<MailjetOptions>().BindConfiguration("Authentication:Mailjet")
+        .Validate(options => options.SenderEmail.Contains('@', StringComparison.Ordinal)
+            && options.SenderEmail.Length <= 254
+            && !string.IsNullOrWhiteSpace(options.ApiKey)
+            && !string.IsNullOrWhiteSpace(options.ApiSecret),
+            "Mailjet credentials and a sender email are required.")
+        .ValidateOnStart();
+    builder.Services.AddHttpClient<MailjetEmailSender>(client => client.Timeout = TimeSpan.FromSeconds(10));
+}
+else
+{
+    builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(options =>
+        {
+            options.Cookie.Name = "__Host-varplats-auth";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.IsEssential = true;
+            options.Cookie.Path = "/";
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.SlidingExpiration = true;
+            options.LoginPath = "/login";
+        });
+}
 builder.Services.AddAuthorization();
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("account-email", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
 builder.Services.AddCascadingAuthenticationState();
 if (authenticationEnabled)
 {
     builder.Services.AddAuthentication()
         .AddGoogle(options =>
         {
+            options.SignInScheme = IdentityConstants.ExternalScheme;
             options.ClientId = builder.Configuration["Authentication:Google:ClientId"]!;
             options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]!;
             options.UserInformationEndpoint = "https://openidconnect.googleapis.com/v1/userinfo";
@@ -101,13 +202,14 @@ if (authenticationEnabled)
                 }
 
                 var identity = context.Identity!;
+                identity.AddClaim(new(ClaimTypes.Email, emailElement.GetString()!));
                 identity.AddClaim(new("email_verified", "true"));
-                identity.AddClaim(new(ClaimTypes.Role, "Member"));
                 return Task.CompletedTask;
             };
         })
         .AddOAuth("GitHub", options =>
         {
+            options.SignInScheme = IdentityConstants.ExternalScheme;
             options.ClientId = builder.Configuration["Authentication:GitHub:ClientId"]!;
             options.ClientSecret = builder.Configuration["Authentication:GitHub:ClientSecret"]!;
             options.CallbackPath = "/signin-github";
@@ -172,9 +274,8 @@ if (authenticationEnabled)
                 var identity = context.Identity!;
                 identity.AddClaim(new(ClaimTypes.NameIdentifier,
                     verifiedGitHubId.ToString(CultureInfo.InvariantCulture)));
+                identity.AddClaim(new(ClaimTypes.Email, verifiedEmail));
                 identity.AddClaim(new("email_verified", "true"));
-                identity.AddClaim(new(ClaimTypes.Role,
-                    verifiedGitHubId.ToString(CultureInfo.InvariantCulture) == adminGitHubId ? "Admin" : "Member"));
             };
         });
 }
@@ -219,6 +320,7 @@ app.Use(async (context, next) =>
 });
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapDefaultEndpoints();
@@ -226,25 +328,140 @@ app.MapGet("/api/reports", async (IReportStore store, CancellationToken cancella
     Results.Ok(await store.ListAsync(cancellationToken)));
 if (authenticationEnabled)
 {
-    app.MapPost("/auth/signin/google", async (HttpContext context, IAntiforgery antiforgery) =>
+    app.MapPost("/auth/signin/google", async (
+        HttpContext context, IAntiforgery antiforgery, SignInManager<IdentityUser<Guid>> signInManager) =>
     {
         await antiforgery.ValidateRequestAsync(context);
-        return Results.Challenge(new AuthenticationProperties { RedirectUri = "/" },
-            [GoogleDefaults.AuthenticationScheme]);
+        var properties = signInManager.ConfigureExternalAuthenticationProperties(
+            GoogleDefaults.AuthenticationScheme, "/auth/external/callback");
+        return Results.Challenge(properties, [GoogleDefaults.AuthenticationScheme]);
     }).AllowAnonymous();
-    app.MapPost("/auth/signin/github", async (HttpContext context, IAntiforgery antiforgery) =>
+    app.MapPost("/auth/signin/github", async (
+        HttpContext context, IAntiforgery antiforgery, SignInManager<IdentityUser<Guid>> signInManager) =>
     {
         await antiforgery.ValidateRequestAsync(context);
-        return Results.Challenge(new AuthenticationProperties { RedirectUri = "/" }, ["GitHub"]);
+        var properties = signInManager.ConfigureExternalAuthenticationProperties("GitHub", "/auth/external/callback");
+        return Results.Challenge(properties, ["GitHub"]);
+    }).AllowAnonymous();
+    app.MapPost("/auth/link/{provider}", async (
+        HttpContext context, IAntiforgery antiforgery, SignInManager<IdentityUser<Guid>> signInManager,
+        string provider) =>
+    {
+        await antiforgery.ValidateRequestAsync(context);
+        if (context.User.HasClaim("recovery_only", "true")) return Results.Forbid();
+        if (!provider.Equals("google", StringComparison.OrdinalIgnoreCase)
+            && !provider.Equals("github", StringComparison.OrdinalIgnoreCase))
+            return Results.BadRequest();
+        var scheme = ExternalScheme(provider);
+        var userId = signInManager.UserManager.GetUserId(context.User);
+        if (userId is null) return Results.Unauthorized();
+        await context.SignOutAsync(IdentityConstants.ExternalScheme);
+        var properties = signInManager.ConfigureExternalAuthenticationProperties(
+            scheme, "/auth/external/callback", userId);
+        return Results.Challenge(properties, [scheme]);
+    }).RequireAuthorization();
+    app.MapGet("/auth/external/callback", async (
+        HttpContext context, SignInManager<IdentityUser<Guid>> signInManager,
+        UserManager<IdentityUser<Guid>> userManager, ILoggerFactory loggerFactory) =>
+    {
+        var existingUser = await userManager.GetUserAsync(context.User);
+        var externalInfo = await signInManager.GetExternalLoginInfoAsync(existingUser?.Id.ToString());
+        if (externalInfo is null)
+            return Results.LocalRedirect("/login?error=external");
+
+        if (existingUser is not null)
+        {
+            if (context.User.HasClaim("recovery_only", "true"))
+                return Results.LocalRedirect("/account/connections?error=link");
+            var linkResult = await userManager.AddLoginAsync(existingUser, externalInfo);
+            if (!linkResult.Succeeded)
+                return Results.LocalRedirect("/account/connections?error=link");
+            if (externalInfo.LoginProvider == "GitHub" && externalInfo.ProviderKey == adminGitHubId
+                && !await userManager.IsInRoleAsync(existingUser, "Admin"))
+            {
+                var adminRoleResult = await userManager.AddToRoleAsync(existingUser, "Admin");
+                if (!adminRoleResult.Succeeded)
+                {
+                    var unlinkResult = await userManager.RemoveLoginAsync(
+                        existingUser, externalInfo.LoginProvider, externalInfo.ProviderKey);
+                    loggerFactory.CreateLogger("ExternalLogin").LogError(
+                        "Could not assign the configured administrator role to a linked GitHub account. Link rollback succeeded: {RollbackSucceeded}.",
+                        unlinkResult.Succeeded);
+                    return Results.Problem("Account setup could not be completed.");
+                }
+            }
+            return Results.LocalRedirect("/account/connections?linked=1");
+        }
+
+        var loginResult = await signInManager.ExternalLoginSignInAsync(
+            externalInfo.LoginProvider, externalInfo.ProviderKey, isPersistent: false, bypassTwoFactor: true);
+        if (loginResult.Succeeded)
+            return Results.LocalRedirect("/");
+        if (loginResult.IsLockedOut)
+            return Results.LocalRedirect("/login?error=locked");
+
+        var email = externalInfo.Principal.FindFirstValue(ClaimTypes.Email);
+        if (externalInfo.Principal.FindFirstValue("email_verified") != "true" || string.IsNullOrWhiteSpace(email))
+            return Results.LocalRedirect("/login?error=email");
+        if (await userManager.FindByEmailAsync(email) is not null)
+            return Results.LocalRedirect("/login?link=required");
+
+        var user = new IdentityUser<Guid> { UserName = email, Email = email, EmailConfirmed = true };
+        var createResult = await userManager.CreateAsync(user);
+        if (!createResult.Succeeded)
+            return Results.LocalRedirect("/login?error=account");
+        var addLoginResult = await userManager.AddLoginAsync(user, externalInfo);
+        if (!addLoginResult.Succeeded)
+        {
+            await userManager.DeleteAsync(user);
+            return Results.LocalRedirect("/login?error=link");
+        }
+
+        var role = externalInfo.LoginProvider == "GitHub" && externalInfo.ProviderKey == adminGitHubId
+            ? "Admin" : "Member";
+        var roleResult = await userManager.AddToRoleAsync(user, role);
+        if (!roleResult.Succeeded)
+        {
+            await userManager.DeleteAsync(user);
+            loggerFactory.CreateLogger("ExternalLogin").LogError(
+                "Could not assign the initial application role to a new external account.");
+            return Results.Problem("Account setup could not be completed.");
+        }
+
+        await signInManager.SignInAsync(user, isPersistent: false);
+        return Results.LocalRedirect("/");
     }).AllowAnonymous();
     app.MapPost("/auth/logout", async (HttpContext context, IAntiforgery antiforgery) =>
     {
         await antiforgery.ValidateRequestAsync(context);
-        await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await context.SignOutAsync(IdentityConstants.ApplicationScheme);
+        await context.SignOutAsync(IdentityConstants.ExternalScheme);
         return Results.LocalRedirect("/");
     }).RequireAuthorization();
+    app.MapEmailAccountEndpoints(publicBaseUrl!);
+    app.MapPasskeyEndpoints();
 }
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.Run();
+
+static bool IsAllowedPasskeyOrigin(string origin, string serverDomain)
+{
+    if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+        || uri.AbsolutePath != "/"
+        || !string.IsNullOrEmpty(uri.UserInfo)
+        || !string.IsNullOrEmpty(uri.Query)
+        || !string.IsNullOrEmpty(uri.Fragment))
+        return false;
+    return uri.Scheme == Uri.UriSchemeHttps
+        && string.Equals(uri.Host, serverDomain, StringComparison.OrdinalIgnoreCase);
+}
+
+static string ExternalScheme(string provider)
+    => provider.ToLowerInvariant() switch
+    {
+        "google" => GoogleDefaults.AuthenticationScheme,
+        "github" => "GitHub",
+        _ => throw new BadHttpRequestException("Unknown external identity provider.")
+    };
 
 public partial class Program;

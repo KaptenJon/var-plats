@@ -181,9 +181,32 @@ eller Actions-loggar. GitHub behöver `user:email`-scope för att verifiera en
 primär e-postadress; inloggning avvisas om leverantören inte bekräftar e-posten.
 Adressen verifieras men sparas inte i appens cookie eller databas.
 Endast exakt det konfigurerade GitHub-ID:t får adminrollen; Google-inloggning ger
-inte adminbehörighet. Callback-URL:erna är
+inte adminbehörighet. Google- och GitHub-konton länkas endast explicit från en
+inloggad session; samma e-postadress länkar aldrig automatiskt. Callback-URL:erna är
 `https://larbornhome.asuscomm.com:8010/signin-google` och
 `https://larbornhome.asuscomm.com:8010/signin-github`.
+
+Passkey/FIDO2 och e-postbekräftelse använder samma exakta HTTPS-origin som
+`Authentication:PublicBaseUrl`, `Passkeys:ServerDomain` och
+`Passkeys:Origins`. Mailjet API-nyckel, API-hemlighet och avsändaradress ska ligga
+i värdens skyddade secret-store; de ska aldrig läggas i repository eller skickas
+i chatt. Återställningslänkar är engångslänkar; sessionen begränsas till att lägga
+till en ny passkey tills den är registrerad. Passkey-inloggningen kräver
+upptäckbara (resident) inloggningsuppgifter så att e-postadress inte behöver
+skickas och konton inte kan upptäckas genom begäran om WebAuthn-alternativ.
+Säkerhetsnyckeln måste därför stödja resident credentials.
+
+Identity skapar ny persondata och är fortfarande avstängt. Innan en separat
+lansering: ta krypterad backup och verifiera återställning, granska
+integritet/retention, kör efter `deploy/sql/001-initial.sql` manuellt
+`deploy/identity-schema.sql` som databasägaren och granska resultatet. Scriptet
+lägger endast till Identity- och passkeytabeller samt roller; det skapar eller
+ändrar inte rapporttabellen. Först efter ett separat beslut om autentisering får
+`deploy/pi-identity-role.sql`
+appliceras för begränsad skrivning till Identity-tabellerna. Det ger inte
+rapportskrivning; `deploy/pi-public-write-role.sql` är en annan spärr och ska
+fortsatt vara orörd. Ändra inte Pi eller andra appar som delat på värden utan
+separat underhållsbeslut.
 
 Den befintliga Pi-deployen saknar OAuth-konfiguration och förblir därför
 skrivskyddad med inloggning avstängd. Aktivera inte riktiga användarkonton innan

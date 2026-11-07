@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using VarPlats.Core;
 using VarPlats.Web;
@@ -90,6 +91,23 @@ public sealed class ReportTests
     }
 
     [Fact]
+    public async Task RecoverySessionCannotReportOrModerate()
+    {
+        var commands = new ReportCommands(new DemoReportStore(), new ReportingMode(false, false, true));
+        var recoveryAdmin = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Role, "Admin"),
+            new Claim("recovery_only", "true")
+        ], "test"));
+
+        Assert.False(ReportCommands.CanReport(recoveryAdmin));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            commands.AddAsync(recoveryAdmin, ValidDraft()));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            commands.RemoveAsync(recoveryAdmin, Guid.NewGuid()));
+    }
+
+    [Fact]
     public void EfModelUsesGeographyAndSpatialIndex()
     {
         using var db = new ReportDbContext(new DbContextOptionsBuilder<ReportDbContext>()
@@ -97,6 +115,9 @@ public sealed class ReportTests
         var entity = db.Model.FindEntityType(typeof(ReportEntity))!;
         Assert.Equal("geography (point, 4326)", entity.FindProperty(nameof(ReportEntity.Location))!.GetColumnType());
         Assert.Contains(entity.GetIndexes(), index => index.GetMethod() == "gist");
+        var passkeyEntity = db.Model.FindEntityType(typeof(IdentityUserPasskey<Guid>))!;
+        Assert.Equal("AspNetUserPasskeys", passkeyEntity.GetTableName());
+        Assert.Contains(passkeyEntity.GetComplexProperties(), property => property.Name == "Data");
     }
 
     public static ReportDraft ValidDraft() => new()

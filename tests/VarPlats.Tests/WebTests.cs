@@ -74,7 +74,13 @@ public sealed class WebTests
             ["Authentication:GitHub:ClientId"] = "test-github-client",
             ["Authentication:GitHub:ClientSecret"] = "test-github-secret",
             ["Authentication:AdminGitHubId"] = "10761546",
-            ["Authentication:TrustedProxyIp"] = "127.0.0.1"
+            ["Authentication:TrustedProxyIp"] = "127.0.0.1",
+            ["Authentication:Mailjet:ApiKey"] = "test-mailjet-key",
+            ["Authentication:Mailjet:ApiSecret"] = "test-mailjet-secret",
+            ["Authentication:Mailjet:SenderEmail"] = "test@example.test",
+            ["Authentication:Passkeys:ServerDomain"] = "example.test",
+            ["Authentication:Passkeys:Origins:0"] = "https://example.test",
+            ["Authentication:PublicBaseUrl"] = "https://example.test"
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -90,6 +96,15 @@ public sealed class WebTests
             new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.StartsWith("https://accounts.google.com/", response.Headers.Location!.ToString());
+
+        using var passkeyRequest = new HttpRequestMessage(HttpMethod.Post, "/auth/passkeys/request-options")
+        {
+            Content = JsonContent.Create(new Dictionary<string, string>())
+        };
+        passkeyRequest.Headers.Add("RequestVerificationToken", token);
+        var passkeyOptions = await client.SendAsync(passkeyRequest);
+        Assert.Equal(HttpStatusCode.OK, passkeyOptions.StatusCode);
+        Assert.DoesNotContain("test@example.test", await passkeyOptions.Content.ReadAsStringAsync());
     }
 
     [Theory]

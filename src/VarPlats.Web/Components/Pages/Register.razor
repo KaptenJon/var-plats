@@ -1,0 +1,23 @@
+@page "/register"
+@using Microsoft.AspNetCore.Components
+@inject IConfiguration Configuration
+
+<PageTitle>Skapa konto – Vår plats</PageTitle>
+<main class="document">
+    <h1>Skapa konto</h1>
+    @if (!Configuration.GetValue<bool>("Authentication:Enabled"))
+    {
+        <p role="status">Kontoregistrering är inte aktiverad i den här miljön.</p>
+    }
+    else
+    {
+        <p>Vi skickar en bekräftelselänk om adressen kan användas. Efter bekräftelsen kan du registrera en passkey eller fysisk FIDO2-nyckel.</p>
+        <form action="/auth/email/register" method="post">
+            <AntiforgeryToken />
+            <label for="register-email">E-postadress</label>
+            <input id="register-email" name="email" type="email" maxlength="254" autocomplete="email" required />
+            <button type="submit">Skicka bekräftelselänk</button>
+        </form>
+    }
+    <p><a href="/login">Tillbaka till inloggning</a></p>
+</main>

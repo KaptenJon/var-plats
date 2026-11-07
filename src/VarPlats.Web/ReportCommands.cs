@@ -20,11 +20,12 @@ public sealed class ReportCommands(IReportStore store, ReportingMode mode)
     {
         if (!mode.CanWrite)
             throw new InvalidOperationException("Rapportskrivning är inte aktiverad.");
-        if (!user.IsInRole("Admin"))
+        if (!user.IsInRole("Admin") || user.HasClaim("recovery_only", "true"))
             throw new UnauthorizedAccessException("Endast administratörer kan ta bort rapporter.");
         return store.RemoveAsync(id, cancellationToken);
     }
 
     public static bool CanReport(ClaimsPrincipal user)
-        => user.IsInRole("Member") || user.IsInRole("Admin");
+        => !user.HasClaim("recovery_only", "true")
+            && (user.IsInRole("Member") || user.IsInRole("Admin"));
 }

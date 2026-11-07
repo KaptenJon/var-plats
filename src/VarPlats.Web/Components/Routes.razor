@@ -3,7 +3,15 @@
 <CascadingAuthenticationState>
     <Router AppAssembly="typeof(Program).Assembly">
         <Found Context="routeData">
-            <RouteView RouteData="routeData" />
+            <AuthorizeRouteView RouteData="routeData">
+                <NotAuthorized>
+                    <main class="document">
+                        <h1>Inloggning krävs</h1>
+                        <p>Logga in för att visa den här sidan.</p>
+                        <a href="/login">Till inloggning</a>
+                    </main>
+                </NotAuthorized>
+            </AuthorizeRouteView>
             <FocusOnNavigate RouteData="routeData" Selector="h1" />
         </Found>
         <NotFound>

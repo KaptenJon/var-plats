@@ -35,6 +35,13 @@ services:
       Map__TileUrl: ${TILE_URL:?Set TILE_URL in the untracked .env file}
       Authentication__Enabled: ${AUTHENTICATION_ENABLED:-false}
       Reporting__PublicWrites: ${REPORTING_PUBLIC_WRITES:-false}
+      Authentication__PublicBaseUrl: ${PUBLIC_BASE_URL:-}
+      Authentication__Passkeys__ServerDomain: ${PASSKEY_SERVER_DOMAIN:-}
+      Authentication__Passkeys__Origins__0: ${PASSKEY_ORIGIN:-}
+      Authentication__Mailjet__ApiKey: ${MAILJET_API_KEY:-}
+      Authentication__Mailjet__ApiSecret: ${MAILJET_API_SECRET:-}
+      Authentication__Mailjet__SenderEmail: ${MAILJET_SENDER_EMAIL:-}
+      Authentication__Mailjet__SenderName: ${MAILJET_SENDER_NAME:-Vår plats}
       Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:-}
       Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:-}
       Authentication__GitHub__ClientId: ${GITHUB_CLIENT_ID:-}
