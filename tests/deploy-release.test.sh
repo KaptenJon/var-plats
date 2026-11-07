@@ -10,6 +10,19 @@ export WEB_IMAGE="ghcr.io/kaptenjon/var-plats-web@sha256:$(printf 'a%.0s' {1..64
 export DB_IMAGE="ghcr.io/kaptenjon/var-plats-postgis@sha256:$(printf 'b%.0s' {1..64})"
 old_web="ghcr.io/kaptenjon/var-plats-web@sha256:$(printf 'c%.0s' {1..64})"
 old_db="ghcr.io/kaptenjon/var-plats-postgis@sha256:$(printf 'd%.0s' {1..64})"
+release_workflow="$root/.github/workflows/release.yml"
+for expected in \
+    'GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}' \
+    'GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}' \
+    'GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}' \
+    'GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}' \
+    'MAILJET_API_KEY: ${{ secrets.MAILJET_API_KEY }}' \
+    'MAILJET_API_SECRET: ${{ secrets.MAILJET_API_SECRET }}' \
+    'MAILJET_SENDER_EMAIL: ${{ secrets.MAILJET_SENDER_EMAIL }}' \
+    'AUTHENTICATION_ENABLED: "false"' \
+    'REPORTING_PUBLIC_WRITES: "false"'; do
+    grep -Fq "$expected" "$release_workflow"
+done
 export TEST_LOG="$fixture/docker.log" TEST_CURL_COUNT="$fixture/curl.count"
 cat > "$fixture/mocks/docker" <<'MOCK'
 #!/usr/bin/env bash
