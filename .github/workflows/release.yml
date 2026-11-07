@@ -89,6 +89,18 @@ jobs:
           REGISTRY_USER: ${{ github.actor }}
           WEB_IMAGE: ghcr.io/kaptenjon/var-plats-web@${{ needs.images.outputs.web-digest }}
           DB_IMAGE: ghcr.io/kaptenjon/var-plats-postgis@${{ needs.images.outputs.db-digest }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          MAILJET_API_KEY: ${{ secrets.MAILJET_API_KEY }}
+          MAILJET_API_SECRET: ${{ secrets.MAILJET_API_SECRET }}
+          MAILJET_SENDER_EMAIL: ${{ secrets.MAILJET_SENDER_EMAIL }}
+          AUTHENTICATION_ENABLED: "false"
+          REPORTING_PUBLIC_WRITES: "false"
+          PUBLIC_BASE_URL: https://larbornhome.asuscomm.com:8010
+          PASSKEY_SERVER_DOMAIN: larbornhome.asuscomm.com
+          PASSKEY_ORIGIN: https://larbornhome.asuscomm.com:8010
         run: |
           set -euo pipefail
           export DOCKER_CONFIG

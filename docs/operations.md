@@ -107,6 +107,18 @@ En self-hosted runner i ett publikt repo är trots detta en risk: workflowkod ka
 ändras, och Docker-medlemskap ger i praktiken administratörsåtkomst till värden.
 Ägaren måste godkänna risken; använd en separat deploymentvärd för stark isolering.
 
+Releasejobbet läser `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`, `MAILJET_API_KEY`,
+`MAILJET_API_SECRET` och `MAILJET_SENDER_EMAIL` som secrets från environment
+`pi-preview`. GitHub-namnen för GitHub OAuth mappas till Compose-inställningarna
+`GITHUB_CLIENT_ID` och `GITHUB_CLIENT_SECRET`. De skickas till webbcontainern vid
+varje godkänd deploy och skrivs inte till Git eller deployens `.env`; Docker-
+administratörer på Pi:n kan dock läsa containerns miljö. Begränsa därför runner-
+och värdåtkomst. Att secrets finns konfigurerade aktiverar inte inloggning:
+releasejobbet håller `AUTHENTICATION_ENABLED` och `REPORTING_PUBLIC_WRITES` till
+`false`. Aktivering kräver en separat granskad ändring och de manuella Identity-
+databasstegen nedan.
+
 Installationen under `/home/kapten/apps/varplats` innehåller `deploy/compose.yml`,
 `deploy/pi.override.yml`, SQL-init, `deploy/pi-runtime-role.sql` och en skyddad
 `deploy/.env`. Installera `deploy/deploy-release.sh` som
