@@ -4,6 +4,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @inject IReportStore Store
+@inject ReportCommands Commands
 @inject ReportingMode Mode
 @inject Microsoft.Extensions.Options.IOptions<MapOptions> MapSettings
 @inject IJSRuntime JS
@@ -30,7 +31,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
 <main>
     <section class="workspace-heading" aria-labelledby="page-title">
         <div><h1 id="page-title">En bättre plats börjar här.</h1><p>Upptäck det som behöver omsorg i vår gemensamma miljö.</p></div>
-        @if (Mode.CanWrite)
+        @if (canReport)
         {
             <RadzenButton Text="Rapportera en plats" Icon="add_location_alt" Click="@OpenForm" />
         }
@@ -44,11 +45,19 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         {
             <strong>Lokal utveckling</strong><span>Rapporter sparas i din utvecklingsdatabas. Använd inga personuppgifter.</span>
         }
+        else if (Mode.PublicWrites)
+        {
+            <strong>Rapportering är öppen</strong><span>Inloggade medlemmar kan rapportera och administratörer kan ta bort rapporter. Beskriv platser, inte personer.</span>
+        }
         else
         {
-            <strong>Förhandsversion · endast läsning</strong><span>Konton, åtgärder, bekräftelser och bevakning är inte öppnade ännu.</span>
+            <strong>Förhandsversion · endast läsning</strong><span>Rapportering är avstängd. Konton, åtgärder, bekräftelser och bevakning öppnas separat.</span>
         }
     </div>
+    @if (Mode.PublicWrites && !canReport)
+    {
+        <p class="save-status">Logga in med ett verifierat konto för att rapportera.</p>
+    }
     <div class="workspace">
         <section class="map-panel" aria-label="Karta över rapporter">
             <div id="map" aria-label="Interaktiv karta. Rapporter finns också i listan." role="region"></div>
@@ -85,7 +94,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                         <div><label for="longitude">Longitud</label><InputNumber id="longitude" @bind-Value="draft.Longitude" step="any" /></div>
                     </div>
                     <p class="safety">Rör inte elinstallationer, trafikmiljö, kemikalier, sprutor eller okänt avfall. Vid akut fara: ring 112.</p>
-                    <RadzenButton ButtonType="ButtonType.Submit" Text="@(saving ? "Sparar…" : Mode.Demo ? "Spara i lokal demo" : "Spara i utvecklingsdatabas")" Disabled="saving" Style="width: 100%" />
+                    <RadzenButton ButtonType="ButtonType.Submit" Text="@(saving ? "Sparar…" : Mode.Demo ? "Spara i lokal demo" : Mode.PublicWrites ? "Publicera rapport" : "Spara i utvecklingsdatabas")" Disabled="saving" Style="width: 100%" />
                 </EditForm>
             }
             else
@@ -102,7 +111,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                 }
                 else if (!VisibleReports.Any())
                 {
-                    <p class="empty">Här finns inga rapporter att visa. @((Mode.CanWrite) ? "Lägg till en första observation." : "Prova en annan kategori eller återkom senare.")</p>
+                    <p class="empty">Här finns inga rapporter att visa. @(canReport ? "Lägg till en första observation." : "Prova en annan kategori eller återkom senare.")</p>
                 }
                 else
                 {
@@ -114,6 +123,10 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                                     <span class="report-symbol" aria-hidden="true">@(report.Category == ReportCategory.Litter ? "♧" : "◇")</span>
                                     <span><span class="report-category">@CategoryName(report.Category) · Rapporterad</span><strong>@report.Title</strong><span class="report-description">@report.Description</span></span>
                                 </button>
+                                @if (canModerate)
+                                {
+                                    <button class="text-button admin-remove" disabled="removing" @onclick="() => Remove(report)">Ta bort rapport</button>
+                                }
                             </li>
                         }
                     </ul>
@@ -132,6 +145,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     private IReadOnlyList<Report> reports = [];
     private ReportDraft draft = new();
     private bool showForm, saving, loading = true;
+    private bool canReport, canModerate, removing, initialized;
     private string? error, status;
     private string filter = "";
     private Guid? selected;
@@ -139,7 +153,20 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     private DotNetObjectReference<Home>? callback;
     private IEnumerable<Report> VisibleReports => reports.Where(report => filter.Length == 0 || report.Category.ToString() == filter);
 
-    protected override async Task OnInitializedAsync() => await LoadReports();
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var user = (await AuthenticationStateTask).User;
+        canReport = Mode.Demo || Mode.LocalWrites || (Mode.PublicWrites && ReportCommands.CanReport(user));
+        canModerate = Mode.CanWrite && user.IsInRole("Admin");
+        if (!initialized)
+        {
+            initialized = true;
+            await LoadReports();
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -186,6 +213,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     }
     private async Task OpenForm()
     {
+        if (!canReport) return;
         showForm = true;
         status = null;
         await InvokeMap("setPicking", true);
@@ -222,13 +250,20 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         error = null;
         try
         {
-            await Store.AddAsync(draft);
+            var user = (await AuthenticationStateTask).User;
+            await Commands.AddAsync(user, draft);
             draft = new();
             filter = "";
             await CloseForm();
             await LoadReports();
             await SyncMap();
-            status = Mode.Demo ? "Rapporten är sparad i din lokala demo, inte publicerad." : "Rapporten är sparad i din utvecklingsdatabas.";
+            status = Mode.Demo ? "Rapporten är sparad i din lokala demo, inte publicerad."
+                : Mode.PublicWrites ? "Rapporten är publicerad. Beskriv platser, inte personer."
+                : "Rapporten är sparad i din utvecklingsdatabas.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Logga in med ett behörigt konto innan du rapporterar.";
         }
         catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or ValidationException)
         {
@@ -236,6 +271,45 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
             error = "Rapporten kunde inte sparas. Kontrollera uppgifterna och databasanslutningen innan du försöker igen.";
         }
         finally { saving = false; }
+    }
+    private async Task Remove(Report report)
+    {
+        if (!canModerate || removing) return;
+        status = null;
+        error = null;
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("confirm", "Ta bort rapporten permanent? Detta kan inte ångras."))
+                return;
+            removing = true;
+            var user = (await AuthenticationStateTask).User;
+            if (!await Commands.RemoveAsync(user, report.Id))
+            {
+                error = "Rapporten finns inte längre. Listan har uppdaterats.";
+                await LoadReports();
+                await SyncMap();
+                return;
+            }
+            if (selected == report.Id) selected = null;
+            await LoadReports();
+            await SyncMap();
+            status = "Rapporten har tagits bort.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Endast administratörer kan ta bort rapporter.";
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            Logger.LogError(exception, "Rapport kunde inte tas bort.");
+            error = "Rapporten kunde inte tas bort. Kontrollera databasanslutningen och försök igen.";
+        }
+        catch (JSException exception)
+        {
+            Logger.LogWarning(exception, "Bekräftelse för borttagning kunde inte visas.");
+            error = "Borttagningen kunde inte bekräftas. Försök igen.";
+        }
+        finally { removing = false; }
     }
     private static string CategoryName(ReportCategory category) => category switch
     {

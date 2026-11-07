@@ -1,7 +1,7 @@
 # Raspberry Pi och drift
 
 **Inte ett godkännande för publik lansering.** Läs SECURITY.md och juridiska utkast
-först. Konton, publika skrivningar och organisationsbevakning är inte öppnade.
+först. Publika skrivningar och organisationsbevakning är inte öppnade.
 
 ## Villkorade hårdvarukrav
 
@@ -84,8 +84,13 @@ Compose-secret håller DB-lösenord borta från imagen, men anslutningssträngen
 webbprocessens miljö kan läsas av Docker-administratörer. Begränsa värdåtkomst.
 Byt till en granskad secret-store/file-konfiguration när driften kräver det.
 Initialt är databasrollen schemaägare för enkel lokal uppstart; skapa en separat
-runtime-roll med endast SELECT före publik läsdrift. Produktionskoden skriver
-inte, men databasen ska försvara samma gräns. Begränsa schemaägaren till migrationer.
+runtime-roll med endast SELECT före publik läsdrift. Publik skrivning är en
+separat opt-in; databasen ska försvara gränsen även om appkonfigurationen ändras.
+Begränsa schemaägaren till migrationer.
+För godkända publika skrivningar finns `deploy/pi-public-write-role.sql`, som
+ger runtime-rollen INSERT/DELETE på rapporttabellen. Kör den manuellt först när
+integritets- och retentionsbeslut är klara och funktionen uttryckligen ska öppnas;
+den nuvarande Pi-deployen förblir skrivskyddad.
 
 Webb kör som icke-root, med read-only rotfilsystem, tmpfs, borttagna capabilities
 och beständig Data Protection-volym. Kryptering av volym/backup och nycklar är
@@ -183,6 +188,9 @@ inte adminbehörighet. Callback-URL:erna är
 Den befintliga Pi-deployen saknar OAuth-konfiguration och förblir därför
 skrivskyddad med inloggning avstängd. Aktivera inte riktiga användarkonton innan
 integritetspolicy, personuppgiftsansvar och retention är beslutade.
+`REPORTING_PUBLIC_WRITES` är `false` i Compose-exemplet. Att sätta den till `true`
+kräver även fungerande OAuth-konfiguration och den separata manuella SQL-granten.
+Gör inget av detta på Pi:n utan separat lanseringsbeslut.
 
 ## Backup, återställning och rollback
 

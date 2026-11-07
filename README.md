@@ -40,16 +40,19 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 
 ## Vad ingår?
 
-| Fungerar nu | Inte implementerat ännu |
+| Fungerar nu (publika konton/skrivningar är avstängda som standard) | Inte implementerat ännu |
 |---|---|
-| Leaflet-karta, kategorifilter och tillgänglig rapportlista | Konton, behörigheter och publik rapportering |
+| Leaflet-karta, kategorifilter och tillgänglig rapportlista | Rapportkö, överklaganden och missbruksskydd |
 | Validering och rapportering i isolerad lokal demo | Bilder, EXIF-rensning och modereringsverktyg |
-| EF Core/PostGIS-lagring i lokalt utvecklingsläge | Dokumenterade åtgärder och oberoende bekräftelser |
-| Läs-API, livs-/beredskapskontroller, OTLP vid konfiguration | Poäng, missbruksskydd för poäng och organisationsbevakning |
-| Installerbart webb/PWA-skal; kräver nätanslutning | Betalning, native-app och offlinekartor |
+| Google/GitHub-inloggning med verifierad e-post; medlem kan rapportera och admin ta bort när det uttryckligen aktiveras | Dokumenterade åtgärder och oberoende bekräftelser |
+| EF Core/PostGIS-lagring i lokalt utvecklingsläge | Poäng och organisationsbevakning |
+| Läs-API, livs-/beredskapskontroller, OTLP vid konfiguration | Betalning, native-app och offlinekartor |
+| Installerbart webb/PWA-skal; kräver nätanslutning | |
 
-Produktionsläge är **endast läsning** och kräver databas. Ingen POST-route finns.
-Demo eller lokala skrivningar i Production stoppar uppstarten.
+Produktion är **endast läsning som standard** och kräver databas. Publika
+skrivningar kräver separat aktivering, fungerande autentisering och en manuell
+databasbehörighet; de är inte aktiverade i Pi-deployen. Demo eller lokala
+skrivningar i Production stoppar uppstarten.
 Organisationsbevakning blir inte officiell kommunal felanmälan.
 
 ## Teknik och drift

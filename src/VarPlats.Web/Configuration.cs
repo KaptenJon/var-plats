@@ -3,9 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace VarPlats.Web;
 
-public sealed record ReportingMode(bool Demo, bool LocalWrites)
+public sealed record ReportingMode(bool Demo, bool LocalWrites, bool PublicWrites)
 {
-    public bool CanWrite => Demo || LocalWrites;
+    public bool CanWrite => Demo || LocalWrites || PublicWrites;
 }
 
 public sealed class MapOptions

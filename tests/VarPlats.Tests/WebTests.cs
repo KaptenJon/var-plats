@@ -54,11 +54,20 @@ public sealed class WebTests
     }
 
     [Fact]
+    public void PublicWritesRequireAuthentication()
+    {
+        using var factory = CreateFactory("Production", new() { ["Reporting:PublicWrites"] = "true" });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Authentication:Enabled", exception.Message);
+    }
+
+    [Fact]
     public async Task ConfiguredLoginChallengesGoogleOnlyWithAntiforgeryToken()
     {
         await using var factory = CreateFactory("Development", new()
         {
-            ["Reporting:Demo"] = "true",
+            ["ConnectionStrings:varplats"] = "Host=127.0.0.1;Database=unused",
+            ["Reporting:PublicWrites"] = "true",
             ["Authentication:Enabled"] = "true",
             ["Authentication:Google:ClientId"] = "test-google-client",
             ["Authentication:Google:ClientSecret"] = "test-google-secret",

@@ -14,7 +14,12 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
 
 ## Skydd i grunden
 
-- Produktion stoppar om demo/lokala skrivningar aktiveras; ingen POST-route.
+- Demo/lokala skrivningar stoppas i produktion. Publika skrivningar är avstängda
+  som standard och vägras om autentisering inte är aktiverad.
+- Publik rapportering kontrollerar medlems-/adminroll; borttagning kräver admin.
+  Ingen publik rapport-POST-route finns, och databasen kräver separat manuell grant.
+- Adminborttagning raderar rapporten permanent. Återställning och granskningshistorik
+  saknas ännu, så funktionen är inte redo att öppnas för riktiga användare.
 - Lokal skrivning kräver Development och loopback. Aldrig en publik dev-proxy.
 - Gemensam servervalidering, EF-parametrisering, textkodade Leaflet-popupfält
   och Blazors normala HTML-kodning. Inget användarinnehåll går till `MarkupString`.
@@ -29,9 +34,11 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
 
 Rapporter kan avslöja hemadress, rörelsemönster, ansikten och tredje person.
 Plats är inte automatiskt ofarlig bara för att den visas på en karta.
-Innan publika skrivningar krävs autentisering, auktorisering/ägarskap,
-verifiering, rate limits, lagringskvoter, spam-/Sybil-skydd, modereringskö och
-återställningsbara adminåtgärder. Innehåll måste kunna döljas/raderas snabbt.
+Även med de nuvarande rollkontrollerna får publika skrivningar inte aktiveras
+förrän integritets-/retentionsbeslut, rate limits, lagringskvoter, spam-/Sybil-
+skydd, granskningskö, granskningshistorik och en återställningsplan är klara.
+Innehåll måste kunna döljas/raderas snabbt. Ingen rapportörsidentitet sparas i
+rapporttabellen.
 
 Bildpipeline måste isolera filer, begränsa filstorlek/antal/dimensioner, avkoda
 verklig filtyp, skanna och återkoda, ta bort EXIF/GPS, bedöma personuppgifter

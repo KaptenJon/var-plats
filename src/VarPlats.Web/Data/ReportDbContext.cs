@@ -48,7 +48,7 @@ public sealed class DatabaseReportStore(
 
     public async Task<Report> AddAsync(ReportDraft draft, CancellationToken cancellationToken = default)
     {
-        if (!mode.LocalWrites)
+        if (!mode.CanWrite)
             throw new InvalidOperationException("Publika skrivningar är inte aktiverade.");
         var report = draft.ToReport();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
@@ -64,5 +64,14 @@ public sealed class DatabaseReportStore(
         });
         await db.SaveChangesAsync(cancellationToken);
         return report;
+    }
+
+    public async Task<bool> RemoveAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!mode.CanWrite)
+            throw new InvalidOperationException("Publika skrivningar är inte aktiverade.");
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        return await db.Reports.Where(report => report.Id == id)
+            .ExecuteDeleteAsync(cancellationToken) > 0;
     }
 }

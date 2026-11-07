@@ -34,6 +34,7 @@ services:
       ConnectionStrings__varplats: ${DATABASE_CONNECTION:?Set DATABASE_CONNECTION in the untracked .env file}
       Map__TileUrl: ${TILE_URL:?Set TILE_URL in the untracked .env file}
       Authentication__Enabled: ${AUTHENTICATION_ENABLED:-false}
+      Reporting__PublicWrites: ${REPORTING_PUBLIC_WRITES:-false}
       Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:-}
       Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:-}
       Authentication__GitHub__ClientId: ${GITHUB_CLIENT_ID:-}

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using VarPlats.Core;
 using VarPlats.Web;
@@ -57,8 +58,35 @@ public sealed class ReportTests
         var options = new DbContextOptionsBuilder<ReportDbContext>()
             .UseNpgsql("Host=localhost;Database=unused", postgres => postgres.UseNetTopologySuite()).Options;
         var factory = new TestContextFactory(options);
-        var store = new DatabaseReportStore(factory, new ReportingMode(false, false));
+        var store = new DatabaseReportStore(factory, new ReportingMode(false, false, false));
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.AddAsync(ValidDraft()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.RemoveAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task PublicWritesRequireMemberOrAdmin()
+    {
+        var commands = new ReportCommands(new DemoReportStore(), new ReportingMode(false, false, true));
+        var anonymous = new ClaimsPrincipal(new ClaimsIdentity());
+        var member = UserWithRole("Member");
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => commands.AddAsync(anonymous, ValidDraft()));
+        Assert.Equal("Skräp på gångväg",
+            (await commands.AddAsync(member, ValidDraft())).Title);
+        Assert.True(ReportCommands.CanReport(UserWithRole("Admin")));
+    }
+
+    [Fact]
+    public async Task OnlyAdminCanRemoveReports()
+    {
+        var store = new DemoReportStore();
+        var commands = new ReportCommands(store, new ReportingMode(false, false, true));
+        var reportId = (await store.ListAsync()).First().Id;
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            commands.RemoveAsync(UserWithRole("Member"), reportId));
+        Assert.True(await commands.RemoveAsync(UserWithRole("Admin"), reportId));
+        Assert.DoesNotContain(await store.ListAsync(), report => report.Id == reportId);
     }
 
     [Fact]
@@ -78,6 +106,9 @@ public sealed class ReportTests
         Latitude = 59.3293,
         Longitude = 18.0686
     };
+
+    private static ClaimsPrincipal UserWithRole(string role)
+        => new(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "test"));
 
     private sealed class TestContextFactory(DbContextOptions<ReportDbContext> options) : IDbContextFactory<ReportDbContext>
     {

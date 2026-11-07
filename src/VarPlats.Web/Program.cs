@@ -21,9 +21,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 var demo = builder.Configuration.GetValue<bool>("Reporting:Demo");
 var localWrites = builder.Configuration.GetValue<bool>("Reporting:LocalWrites");
+var publicWrites = builder.Configuration.GetValue<bool>("Reporting:PublicWrites");
 var authenticationEnabled = builder.Configuration.GetValue<bool>("Authentication:Enabled");
 if ((demo || localWrites) && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Demo och lokala skrivningar är endast tillåtna i Development.");
+if (publicWrites && (demo || localWrites))
+    throw new InvalidOperationException("Publika skrivningar kan inte kombineras med demo eller lokala skrivningar.");
+if (publicWrites && !authenticationEnabled)
+    throw new InvalidOperationException("Reporting:PublicWrites kräver Authentication:Enabled.");
 
 var adminGitHubId = builder.Configuration["Authentication:AdminGitHubId"];
 var trustedProxyValue = builder.Configuration["Authentication:TrustedProxyIp"];
@@ -47,7 +52,8 @@ if (authenticationEnabled)
     adminGitHubId = parsedAdminId.ToString(CultureInfo.InvariantCulture);
 }
 
-builder.Services.AddSingleton(new ReportingMode(demo, localWrites));
+builder.Services.AddSingleton(new ReportingMode(demo, localWrites, publicWrites));
+builder.Services.AddScoped<ReportCommands>();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
