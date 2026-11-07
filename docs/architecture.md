@@ -25,9 +25,11 @@ Läsningen tar de senaste 200 rapporterna; detta är en tydlig prototypbegränsn
 inte geografisk sökning eller paginering. Dessa krävs före skalning.
 
 `Reporting:Demo` och `Reporting:LocalWrites` får bara användas i Development.
-All trafik i dessa lägen måste komma från loopback. `DatabaseReportStore`
-nekar dessutom skrivning om flaggan inte är aktiverad. Produktionskonfiguration
-måste lämna båda avstängda. Ingen proxy får göra detta till en publik demo.
+All trafik i dessa lägen måste komma från loopback. `Reporting:PublicWrites` är
+avstängd som standard, kräver aktiverad autentisering och ger endast inloggade
+medlemmar rapporteringsrätt; borttagning kräver admin. Databasrollen får skriva
+först efter separat manuell grant. Aktivera inte funktionen innan lanseringskraven
+i SECURITY.md och integritetsutkasten är hanterade.
 
 Databasschemat ligger i versionsmärkt init-SQL. Det skapas inte automatiskt av
 EF vid varje uppstart. Senare schemaändringar kräver separat granskad migration,
@@ -35,8 +37,8 @@ backup, återställningsprov och kompatibilitetsplan. Init-script är inte migra
 
 ## Nästa moduler och regler
 
-1. **Identitet och moderering:** konto, roller, verifiering, ägarskap, begränsningar,
-   rapportera missbruk och granskningskö före offentliga skrivningar.
+1. **Moderering:** rapportera missbruk, granskningskö, överklaganden,
+   begränsningar, återställning och rate limits.
 2. **Rapporter:** statusövergångar, geografisk sökning, dubbletter, bildpipeline
    med typ-/storlekskontroll, skanning, EXIF-rensning och åtkomstkontroll.
 3. **Åtgärder:** separat dokumentation knuten till rapport, beskrivning och bevis,

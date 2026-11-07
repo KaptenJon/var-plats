@@ -1,0 +1,100 @@
+@page "/login"
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@using Microsoft.AspNetCore.Components
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
+
+<PageTitle>Logga in – Vår plats</PageTitle>
+<main class="document">
+    <h1>Logga in</h1>
+    @if (!Configuration.GetValue<bool>("Authentication:Enabled"))
+    {
+        <p role="status">Inloggning är inte aktiverad i den här miljön.</p>
+    }
+    else
+    {
+        <p>Logga in med en passkey, fysisk FIDO2-säkerhetsnyckel eller ett länkat Google-/GitHub-konto.</p>
+        @if (error is not null)
+        {
+            <p class="error" role="alert">@error</p>
+        }
+        <button type="button" disabled="@busy" @onclick="SignInWithPasskey">Logga in med passkey eller säkerhetsnyckel</button>
+        <AntiforgeryToken />
+        <form action="/auth/signin/google" method="post">
+            <AntiforgeryToken />
+            <button type="submit">Fortsätt med Google</button>
+        </form>
+        <form action="/auth/signin/github" method="post">
+            <AntiforgeryToken />
+            <button type="submit">Fortsätt med GitHub</button>
+        </form>
+        <p><a href="/register">Skapa konto med verifierad e-post och passkey</a></p>
+        <p><a href="/recover">Återställ passkey med verifierad e-post</a></p>
+    }
+    <p><a href="/">Tillbaka till kartan</a></p>
+</main>
+
+@code {
+    private string? error;
+    private bool busy;
+    private IJSObjectReference? module;
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? ErrorCode { get; set; }
+
+    [SupplyParameterFromQuery(Name = "registered")]
+    private string? Registered { get; set; }
+
+    [SupplyParameterFromQuery(Name = "link")]
+    private string? LinkCode { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        error = ErrorCode switch
+        {
+            "verification" => "E-postlänken är ogiltig eller har gått ut.",
+            "external" => "Den externa inloggningen kunde inte slutföras.",
+            "email" => "Leverantören kunde inte bekräfta en e-postadress.",
+            "account" or "link" => "Kontot kunde inte skapas eller länkas.",
+            "locked" => "Kontot är tillfälligt låst. Försök igen senare.",
+            _ when LinkCode == "required" =>
+                "E-postadressen används redan. Logga in med ditt befintliga konto och länka sedan leverantören från inloggningsinställningarna.",
+            _ when Registered == "1" =>
+                "Om adressen kan användas skickas en bekräftelselänk.",
+            _ => null
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Configuration.GetValue<bool>("Authentication:Enabled"))
+        {
+            try { module = await JS.InvokeAsync<IJSObjectReference>("import", "./passkeys.js"); }
+            catch (JSException) { error = "Passkey-funktionen kunde inte laddas."; }
+        }
+    }
+
+    private async Task SignInWithPasskey()
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        try
+        {
+            if (module is null) throw new InvalidOperationException("Passkey-funktionen kunde inte laddas.");
+            error = await module.InvokeAsync<string>("signIn");
+        }
+        catch (JSException)
+        {
+            error = "Passkey-inloggningen kunde inte starta. Ladda om sidan och försök igen.";
+        }
+        finally { busy = false; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is not null)
+            await module.DisposeAsync();
+    }
+}

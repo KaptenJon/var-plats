@@ -3,15 +3,23 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace VarPlats.Web;
 
-public sealed record ReportingMode(bool Demo, bool LocalWrites)
+public sealed record ReportingMode(bool Demo, bool LocalWrites, bool PublicWrites)
 {
-    public bool CanWrite => Demo || LocalWrites;
+    public bool CanWrite => Demo || LocalWrites || PublicWrites;
 }
 
 public sealed class MapOptions
 {
     public string TileUrl { get; set; } = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
     public string Attribution { get; set; } = "© OpenStreetMap contributors";
+}
+
+public sealed class MailjetOptions
+{
+    public string ApiKey { get; set; } = "";
+    public string ApiSecret { get; set; } = "";
+    public string SenderEmail { get; set; } = "";
+    public string SenderName { get; set; } = "Vår plats";
 }
 
 public sealed class PublicExceptionHandler(ILogger<PublicExceptionHandler> logger) : IExceptionHandler

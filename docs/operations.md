@@ -1,7 +1,7 @@
 # Raspberry Pi och drift
 
 **Inte ett godkännande för publik lansering.** Läs SECURITY.md och juridiska utkast
-först. Konton, publika skrivningar och organisationsbevakning är inte öppnade.
+först. Publika skrivningar och organisationsbevakning är inte öppnade.
 
 ## Villkorade hårdvarukrav
 
@@ -84,8 +84,13 @@ Compose-secret håller DB-lösenord borta från imagen, men anslutningssträngen
 webbprocessens miljö kan läsas av Docker-administratörer. Begränsa värdåtkomst.
 Byt till en granskad secret-store/file-konfiguration när driften kräver det.
 Initialt är databasrollen schemaägare för enkel lokal uppstart; skapa en separat
-runtime-roll med endast SELECT före publik läsdrift. Produktionskoden skriver
-inte, men databasen ska försvara samma gräns. Begränsa schemaägaren till migrationer.
+runtime-roll med endast SELECT före publik läsdrift. Publik skrivning är en
+separat opt-in; databasen ska försvara gränsen även om appkonfigurationen ändras.
+Begränsa schemaägaren till migrationer.
+För godkända publika skrivningar finns `deploy/pi-public-write-role.sql`, som
+ger runtime-rollen INSERT/DELETE på rapporttabellen. Kör den manuellt först när
+integritets- och retentionsbeslut är klara och funktionen uttryckligen ska öppnas;
+den nuvarande Pi-deployen förblir skrivskyddad.
 
 Webb kör som icke-root, med read-only rotfilsystem, tmpfs, borttagna capabilities
 och beständig Data Protection-volym. Kryptering av volym/backup och nycklar är
@@ -157,9 +162,58 @@ Samma värdnamn återanvänder Caddys befintliga certifikat. Validera med
 ogiltig konfiguration avvisas och den gamla fortsätter köra. Routern behöver
 vidarebefordra TCP 8010 till Pi:n. LAN-klienter som använder domännamnet kräver
 NAT-loopback i routern; LAN-IP fungerar inte med TLS eftersom certifikatet gäller
-domänen. Appen litar inte på forwarded headers, så den skickar ingen HSTS och ser
-proxyns klient-IP. Konfigurera kända proxies innan inloggning, säkra cookies eller
-IP-baserade begränsningar införs bakom proxyn.
+domänen. När autentiseringsändringen är driftsatt litar appen på
+`X-Forwarded-Proto` från loopback och, när auth aktiveras, en enda exakt
+`Authentication:TrustedProxyIp` för Caddy. `X-Forwarded-For`,
+`X-Forwarded-Host` och breda proxynät ignoreras. Webbcontainerns port ska fortsatt
+vara loopback-only. Det gör att HTTPS-schemat används för HSTS och OAuth-callbacks
+utan att godtyckliga klienter kan förfalska proxyheaders.
+
+### Extern inloggning
+
+Google- och GitHub-inloggning är avstängd som standard. Aktivering kräver OAuth-
+client ID och client secret för båda leverantörerna, ägarens stabila numeriska
+`Authentication:AdminGitHubId` och den exakta IP-adress som containern ser för
+Caddy under `Authentication:TrustedProxyIp`. Läs gatewayadressen från just
+webbcontainerns Docker-nät; gissa inte ett helt privat nätverk. Lägg
+hemligheterna i värdens skyddade konfiguration/secret-store, aldrig i Git, issues
+eller Actions-loggar. GitHub behöver `user:email`-scope för att verifiera en
+primär e-postadress; inloggning avvisas om leverantören inte bekräftar e-posten.
+Adressen verifieras men sparas inte i appens cookie eller databas.
+Endast exakt det konfigurerade GitHub-ID:t får adminrollen; Google-inloggning ger
+inte adminbehörighet. Google- och GitHub-konton länkas endast explicit från en
+inloggad session; samma e-postadress länkar aldrig automatiskt. Callback-URL:erna är
+`https://larbornhome.asuscomm.com:8010/signin-google` och
+`https://larbornhome.asuscomm.com:8010/signin-github`.
+
+Passkey/FIDO2 och e-postbekräftelse använder samma exakta HTTPS-origin som
+`Authentication:PublicBaseUrl`, `Passkeys:ServerDomain` och
+`Passkeys:Origins`. Mailjet API-nyckel, API-hemlighet och avsändaradress ska ligga
+i värdens skyddade secret-store; de ska aldrig läggas i repository eller skickas
+i chatt. Återställningslänkar är engångslänkar; sessionen begränsas till att lägga
+till en ny passkey tills den är registrerad. Passkey-inloggningen kräver
+upptäckbara (resident) inloggningsuppgifter så att e-postadress inte behöver
+skickas och konton inte kan upptäckas genom begäran om WebAuthn-alternativ.
+Säkerhetsnyckeln måste därför stödja resident credentials.
+
+Identity skapar ny persondata och är fortfarande avstängt. Innan en separat
+lansering: ta krypterad backup och verifiera återställning, granska
+integritet/retention, kör efter `deploy/sql/001-initial.sql` manuellt
+`deploy/identity-schema.sql` som databasägaren och granska resultatet. Scriptet
+lägger endast till Identity- och passkeytabeller samt roller; det skapar eller
+ändrar inte rapporttabellen. Först efter ett separat beslut om autentisering får
+`deploy/pi-identity-role.sql`
+appliceras för begränsad skrivning till Identity-tabellerna. Det ger inte
+rapportskrivning; `deploy/pi-public-write-role.sql` är en annan spärr och ska
+fortsatt vara orörd. Ändra inte Pi eller andra appar som delat på värden utan
+separat underhållsbeslut.
+
+Den befintliga Pi-deployen saknar OAuth-konfiguration och förblir därför
+skrivskyddad med inloggning avstängd. Aktivera inte riktiga användarkonton innan
+integritetspolicy, personuppgiftsansvar och retention är beslutade.
+`REPORTING_PUBLIC_WRITES` är `false` i Compose-exemplet. Att sätta den till `true`
+kräver även fungerande OAuth-konfiguration och den separata manuella SQL-granten.
+Gör inget av detta på Pi:n utan separat lanseringsbeslut.
 
 ## Backup, återställning och rollback
 

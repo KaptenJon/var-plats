@@ -28,6 +28,7 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check src/VarPlats.Web/wwwroot/map.js
+          node --check src/VarPlats.Web/wwwroot/passkeys.js
           node --check src/VarPlats.Web/wwwroot/service-worker.js
       - name: Deployment script checks
         run: |

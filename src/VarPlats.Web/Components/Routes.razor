@@ -1,10 +1,21 @@
 @using Microsoft.AspNetCore.Components.Routing
-<Router AppAssembly="typeof(Program).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="routeData" />
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
-    </Found>
-    <NotFound>
-        <main class="document"><h1>Sidan finns inte</h1><a href="/">Till kartan</a></main>
-    </NotFound>
-</Router>
+@using Microsoft.AspNetCore.Components.Authorization
+<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData">
+                <NotAuthorized>
+                    <main class="document">
+                        <h1>Inloggning krävs</h1>
+                        <p>Logga in för att visa den här sidan.</p>
+                        <a href="/login">Till inloggning</a>
+                    </main>
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <main class="document"><h1>Sidan finns inte</h1><a href="/">Till kartan</a></main>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

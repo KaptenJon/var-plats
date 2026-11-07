@@ -46,6 +46,7 @@ textarea { resize: vertical; }
 .report-item { width: 100%; border: 0; text-align: left; background: transparent; padding: 18px 2px; display: flex; gap: 12px; cursor: pointer; color: var(--ink); }
 .report-item:hover, .report-item.selected { background: var(--field); }
 .report-item strong { display: block; line-height: 1.35; margin: 5px 0 6px; font-size: 17px; }
+.admin-remove { display: block; margin: 0 0 10px auto; }
 .report-category { color: var(--forest); font-size: 12px; font-weight: 600; }
 .report-description { display: block; font-size: 14px; color: var(--muted); }
 .report-symbol { border: 1px solid #91a799; color: var(--forest); width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; font-size: 23px; margin-top: 3px; border-radius: 50%; }

@@ -51,6 +51,7 @@ public interface IReportStore
 {
     Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default);
     Task<Report> AddAsync(ReportDraft draft, CancellationToken cancellationToken = default);
+    Task<bool> RemoveAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
 public sealed class DemoReportStore : IReportStore
@@ -74,4 +75,7 @@ public sealed class DemoReportStore : IReportStore
         reports.Insert(0, report);
         return Task.FromResult(report);
     }
+
+    public Task<bool> RemoveAsync(Guid id, CancellationToken cancellationToken = default)
+        => Task.FromResult(reports.RemoveAll(report => report.Id == id) > 0);
 }

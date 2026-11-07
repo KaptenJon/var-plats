@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using VarPlats.Core;
 
@@ -15,13 +17,36 @@ public sealed class ReportEntity
     public ReportStatus Status { get; set; }
 }
 
-public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options) : DbContext(options)
+public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
+    : IdentityDbContext<
+        IdentityUser<Guid>,
+        IdentityRole<Guid>,
+        Guid,
+        IdentityUserClaim<Guid>,
+        IdentityUserRole<Guid>,
+        IdentityUserLogin<Guid>,
+        IdentityRoleClaim<Guid>,
+        IdentityUserToken<Guid>,
+        IdentityUserPasskey<Guid>>(options)
 {
     public DbSet<ReportEntity> Reports => Set<ReportEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
         modelBuilder.HasPostgresExtension("postgis");
+        modelBuilder.Entity<IdentityUserPasskey<Guid>>(entity =>
+        {
+            entity.HasKey(passkey => passkey.CredentialId);
+            entity.ToTable("AspNetUserPasskeys");
+            entity.Property(passkey => passkey.CredentialId).HasMaxLength(1024);
+            entity.ComplexProperty(passkey => passkey.Data).ToJson();
+            entity.HasOne<IdentityUser<Guid>>()
+                .WithMany()
+                .HasForeignKey(passkey => passkey.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+        });
         modelBuilder.Entity<ReportEntity>(entity =>
         {
             entity.ToTable("reports");
@@ -48,7 +73,7 @@ public sealed class DatabaseReportStore(
 
     public async Task<Report> AddAsync(ReportDraft draft, CancellationToken cancellationToken = default)
     {
-        if (!mode.LocalWrites)
+        if (!mode.CanWrite)
             throw new InvalidOperationException("Publika skrivningar är inte aktiverade.");
         var report = draft.ToReport();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
@@ -64,5 +89,14 @@ public sealed class DatabaseReportStore(
         });
         await db.SaveChangesAsync(cancellationToken);
         return report;
+    }
+
+    public async Task<bool> RemoveAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!mode.CanWrite)
+            throw new InvalidOperationException("Publika skrivningar är inte aktiverade.");
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        return await db.Reports.Where(report => report.Id == id)
+            .ExecuteDeleteAsync(cancellationToken) > 0;
     }
 }

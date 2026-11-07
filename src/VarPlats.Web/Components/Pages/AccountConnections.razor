@@ -1,0 +1,156 @@
+@page "/account/connections"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@implements IAsyncDisposable
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@inject UserManager<IdentityUser<Guid>> UserManager
+@inject IJSRuntime JS
+
+<PageTitle>Inloggningsmetoder – Vår plats</PageTitle>
+<main class="document">
+    <h1>Inloggningsmetoder</h1>
+    <p>Länka bara konton och nycklar som du själv kontrollerar. E-postadresser matchas inte automatiskt.</p>
+    @if (message is not null)
+    {
+        <p role="status">@message</p>
+    }
+    @if (recoveryOnly)
+    {
+        <p>Återställningsläget kan endast lägga till en ny passkey. Andra inloggningsmetoder kan inte ändras förrän passkeyn är registrerad.</p>
+    }
+    <h2>Passkeys och fysiska nycklar</h2>
+    <AntiforgeryToken />
+    <button type="button" disabled="@busy" @onclick="AddPasskey">Lägg till passkey eller FIDO2-nyckel</button>
+    @if (passkeys.Count > 0)
+    {
+        <ul>
+            @foreach (var key in passkeys)
+            {
+                <li><span>Registrerad säkerhetsnyckel</span>
+                    @if (!recoveryOnly)
+                    {
+                        <button type="button" class="text-button" disabled="@busy" @onclick="() => RemovePasskey(key)">Ta bort</button>
+                    }
+                </li>
+            }
+        </ul>
+    }
+    <h2>Google och GitHub</h2>
+    @foreach (var provider in new[] { "google", "github" })
+    {
+        @if (linkedProviders.Contains(provider, StringComparer.OrdinalIgnoreCase))
+        {
+            <p>@(provider == "google" ? "Google" : "GitHub") är länkat.</p>
+        }
+        else if (!recoveryOnly)
+        {
+            <form action="@($"/auth/link/{provider}")" method="post">
+                <AntiforgeryToken />
+                <button type="submit">Länka @(provider == "google" ? "Google" : "GitHub")</button>
+            </form>
+        }
+    }
+    <p><a href="/">Tillbaka till kartan</a></p>
+</main>
+
+@code {
+    private IReadOnlyList<string> linkedProviders = [];
+    private IReadOnlyList<string> passkeys = [];
+    private IJSObjectReference? module;
+    private bool busy;
+    private string? message;
+    private bool recoveryOnly;
+
+    [SupplyParameterFromQuery(Name = "linked")]
+    private string? Linked { get; set; }
+
+    [SupplyParameterFromQuery(Name = "verified")]
+    private string? Verified { get; set; }
+
+    [SupplyParameterFromQuery(Name = "recovery")]
+    private string? Recovery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        message = (Linked, Verified, Recovery, Error) switch
+        {
+            ("1", _, _, _) => "Inloggningsmetoden har länkats.",
+            (_, "1", _, _) => "E-postadressen är bekräftad. Lägg nu till en passkey eller säkerhetsnyckel.",
+            (_, _, "1", _) => "Återställningen lyckades. Lägg till en ny passkey eller säkerhetsnyckel.",
+            (_, _, _, "link") => "Inloggningsmetoden kunde inte länkas. Kontrollera att den inte redan används.",
+            _ => null
+        };
+    }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var principal = (await AuthenticationStateTask).User;
+        recoveryOnly = principal.HasClaim("recovery_only", "true");
+        var user = await UserManager.GetUserAsync(principal);
+        if (user is null) return;
+        linkedProviders = (await UserManager.GetLoginsAsync(user))
+            .Select(login => login.LoginProvider).ToArray();
+        passkeys = (await UserManager.GetPasskeysAsync(user))
+            .Select(passkey => WebEncoders.Base64UrlEncode(passkey.CredentialId)).ToArray();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { module = await JS.InvokeAsync<IJSObjectReference>("import", "./passkeys.js"); }
+            catch (JSException) { message = "Passkey-funktionen kunde inte laddas."; }
+        }
+    }
+
+    private async Task AddPasskey()
+    {
+        if (busy) return;
+        busy = true;
+        try
+        {
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./passkeys.js");
+            message = await module.InvokeAsync<string>("addPasskey");
+        }
+        catch (JSException)
+        {
+            message = "Nyckeln kunde inte registreras. Ladda om sidan och försök igen.";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task RemovePasskey(string credentialId)
+    {
+        if (busy) return;
+        bool confirmed;
+        try { confirmed = await JS.InvokeAsync<bool>("confirm", "Ta bort den här inloggningsnyckeln?"); }
+        catch (JSException) { message = "Bekräftelsen kunde inte öppnas."; return; }
+        if (!confirmed) return;
+        busy = true;
+        try
+        {
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./passkeys.js");
+            message = await module.InvokeAsync<string>("removePasskey", credentialId);
+        }
+        catch (JSException)
+        {
+            message = "Nyckeln kunde inte tas bort. Ladda om sidan och försök igen.";
+        }
+        finally { busy = false; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is not null)
+            await module.DisposeAsync();
+    }
+}

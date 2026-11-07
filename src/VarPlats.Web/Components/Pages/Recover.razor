@@ -1,0 +1,55 @@
+@page "/recover"
+@using Microsoft.AspNetCore.Components
+@inject IConfiguration Configuration
+
+<PageTitle>Återställ inloggning – Vår plats</PageTitle>
+<main class="document">
+    <h1>Återställ inloggning</h1>
+    @if (!Configuration.GetValue<bool>("Authentication:Enabled"))
+    {
+        <p role="status">Återställning är inte aktiverad i den här miljön.</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(UserId) && !string.IsNullOrWhiteSpace(Token))
+    {
+        <p>Fortsätt för att skapa en tillfällig session och lägga till en ny passkey. Den här länken kan bara användas en gång.</p>
+        <form action="/auth/email/recover" method="post">
+            <AntiforgeryToken />
+            <input type="hidden" name="userId" value="@UserId" />
+            <input type="hidden" name="token" value="@Token" />
+            <button type="submit">Fortsätt och lägg till passkey</button>
+        </form>
+    }
+    else
+    {
+        @if (Sent == "1")
+        {
+            <p role="status">Om ett bekräftat konto finns för adressen skickas en återställningslänk.</p>
+        }
+        else if (Error == "invalid")
+        {
+            <p class="error" role="alert">Länken är ogiltig eller har gått ut. Begär en ny återställningslänk.</p>
+        }
+        <p>Om du har bekräftat din e-postadress skickar vi en länk för att lägga till en ny passkey. Länken kan bara användas en gång.</p>
+        <form action="/auth/email/recovery-request" method="post">
+            <AntiforgeryToken />
+            <label for="recovery-email">E-postadress</label>
+            <input id="recovery-email" name="email" type="email" maxlength="254" autocomplete="email" required />
+            <button type="submit">Skicka återställningslänk</button>
+        </form>
+    }
+    <p><a href="/login">Tillbaka till inloggning</a></p>
+</main>
+
+@code {
+    [SupplyParameterFromQuery(Name = "userId")]
+    private string? UserId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "token")]
+    private string? Token { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sent")]
+    private string? Sent { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+}
