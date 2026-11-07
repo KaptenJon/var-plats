@@ -1,5 +1,6 @@
 services:
   db:
+    command: ["postgres", "-c", "max_connections=40", "-c", "shared_buffers=128MB", "-c", "work_mem=4MB", "-c", "maintenance_work_mem=64MB"]
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 200
@@ -9,6 +10,8 @@ services:
         max-size: "10m"
         max-file: "3"
   web:
+    environment:
+      DOTNET_GCHeapHardLimit: "0x10000000"
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 200

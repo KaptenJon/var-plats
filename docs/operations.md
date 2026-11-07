@@ -115,6 +115,9 @@ För en **ny, tom installation** skapas ett slumpat schemaägarlösenord i
 runtime-lösenordet `600`. DB-secret måste vara läsbar av containerns postgres-
 användare, exempelvis `444` innanför den skyddade katalogen. `.env` ska använda
 `Username=varplats_reader` och runtime-lösenordet i `DATABASE_CONNECTION`.
+SQL-initkatalogen måste vara läsbar i containern (`755`, SQL-filer `644`), även
+om kopiering/extrahering skett med restriktiv umask. Installationsroten förblir
+`700`, så andra värdanvändare får inte åtkomst genom dessa filrättigheter.
 Det första godkända deploymentjobbet initierar databasen och SELECT-only-rollen
 samt sätter ägarskap på endast projektets Data Protection-volym.
 
@@ -125,6 +128,13 @@ appen. Senare deployment ändrar **endast webbcontainern**; databasen förblir
 pinnad och inga migrationer körs automatiskt. Schema- och databasimageändringar
 kräver separat granskning och backup. Misslyckad readiness rullar tillbaka till
 föregående webbimage utan att stoppa databasen eller andra appar.
+
+Verifiera `docker info` för stöd för minnes-cgroups: vissa Pi-kärnor ignorerar
+`mem_limit`. Pi-override begränsar även .NET:s GC-heap till 256 MiB och sänker
+PostgreSQL:s anslutnings-/minnesinställningar, men detta är inte en hård gräns
+för processernas totala RAM. Att aktivera saknade kernel-cgroups kan kräva
+bootkonfiguration och omstart; gör inte detta utan en separat underhållsplan
+för alla appar som delar värden.
 
 ## Backup, återställning och rollback
 
