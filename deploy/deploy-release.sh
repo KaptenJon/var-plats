@@ -45,8 +45,10 @@ if [[ ! -f "$root/state/database-ready" ]]; then
         cat "$root/deploy/pi-runtime-role.sql"
     } | "${compose[@]}" exec -T db psql -U varplats -d varplats -q -v ON_ERROR_STOP=1
     # A fresh named volume otherwise has root ownership, but the web image runs as app.
-    "${compose[@]}" run --rm --no-deps --user 0 --entrypoint chown web \
-        -R 1654:1654 /home/app/.aspnet/DataProtection-Keys
+    docker run --rm --user 0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE \
+        --security-opt no-new-privileges:true --read-only --network none \
+        --volume varplats_dataprotection:/keys --entrypoint chown "$WEB_IMAGE" \
+        -R 1654:1654 /keys
     temporary=$(mktemp "$root/deploy/.env.XXXXXX")
     sed "s|^DB_IMAGE=.*|DB_IMAGE=$DB_IMAGE|" "$config" > "$temporary"
     mv "$temporary" "$config"
