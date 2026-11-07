@@ -5,6 +5,8 @@ on:
     branches: [main, "kaptenjon-*"]
 permissions:
   contents: read
+env:
+  TILE_URL: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -34,7 +36,10 @@ jobs:
       - name: Validate Compose without real secrets
         env:
           DATABASE_CONNECTION: Host=db;Database=varplats;Username=varplats;Password=ci-placeholder-only
-        run: docker compose -f deploy/compose.yml config --quiet
+        run: |
+          docker compose -f deploy/compose.yml config --quiet
+          rendered_url=$(docker compose -f deploy/compose.yml config --format json | jq -r '.services.web.environment.Map__TileUrl')
+          test "$rendered_url" = "$TILE_URL"
   arm64-smoke:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20

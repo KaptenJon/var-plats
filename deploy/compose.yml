@@ -32,7 +32,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       AllowedHosts: ${PUBLIC_HOST:-localhost}
       ConnectionStrings__varplats: ${DATABASE_CONNECTION:?Set DATABASE_CONNECTION in the untracked .env file}
-      Map__TileUrl: ${TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}
+      Map__TileUrl: ${TILE_URL:?Set TILE_URL in the untracked .env file}
     depends_on:
       db:
         condition: service_healthy

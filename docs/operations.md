@@ -47,6 +47,9 @@ Sätt samma lokala lösenord i `DATABASE_CONNECTION` i den oincheckade
 `deploy/.env`. Använd ett långt slumpvärde som inte behöver connection-string-
 escaping, exempelvis hexvärdet ovan. Kör inte hemligheterna genom issues eller
 terminalkommandon som publiceras. `.env` och `secrets/` ignoreras av Git.
+`TILE_URL` måste också anges i `.env`, som i exemplet. URL-mallens klammerparenteser
+ska inte ligga i Compose-interpolationens standardvärde: äldre Compose v2 kan
+då skapa en felaktig tile-URL även när miljövariabeln är satt.
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yml config --quiet
