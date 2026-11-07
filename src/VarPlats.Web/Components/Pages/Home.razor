@@ -1,6 +1,8 @@
 @page "/"
 @rendermode InteractiveServer
 @implements IAsyncDisposable
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @inject IReportStore Store
 @inject ReportingMode Mode
 @inject Microsoft.Extensions.Options.IOptions<MapOptions> MapSettings
@@ -15,6 +17,15 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
 <header class="topbar">
     <a class="brand" href="/" aria-label="Vår plats, startsida"><span class="brand-mark" aria-hidden="true">⌖</span> Vår plats<span class="prototype">Prototyp</span></a>
     <a href="/om">Om tjänsten</a>
+    <AuthorizeView>
+        <Authorized>
+            <form action="/auth/logout" method="post">
+                <AntiforgeryToken />
+                <button class="text-button" type="submit">Logga ut</button>
+            </form>
+        </Authorized>
+        <NotAuthorized><a href="/login">Logga in</a></NotAuthorized>
+    </AuthorizeView>
 </header>
 <main>
     <section class="workspace-heading" aria-labelledby="page-title">

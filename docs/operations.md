@@ -157,9 +157,32 @@ Samma värdnamn återanvänder Caddys befintliga certifikat. Validera med
 ogiltig konfiguration avvisas och den gamla fortsätter köra. Routern behöver
 vidarebefordra TCP 8010 till Pi:n. LAN-klienter som använder domännamnet kräver
 NAT-loopback i routern; LAN-IP fungerar inte med TLS eftersom certifikatet gäller
-domänen. Appen litar inte på forwarded headers, så den skickar ingen HSTS och ser
-proxyns klient-IP. Konfigurera kända proxies innan inloggning, säkra cookies eller
-IP-baserade begränsningar införs bakom proxyn.
+domänen. När autentiseringsändringen är driftsatt litar appen på
+`X-Forwarded-Proto` från loopback och, när auth aktiveras, en enda exakt
+`Authentication:TrustedProxyIp` för Caddy. `X-Forwarded-For`,
+`X-Forwarded-Host` och breda proxynät ignoreras. Webbcontainerns port ska fortsatt
+vara loopback-only. Det gör att HTTPS-schemat används för HSTS och OAuth-callbacks
+utan att godtyckliga klienter kan förfalska proxyheaders.
+
+### Extern inloggning
+
+Google- och GitHub-inloggning är avstängd som standard. Aktivering kräver OAuth-
+client ID och client secret för båda leverantörerna, ägarens stabila numeriska
+`Authentication:AdminGitHubId` och den exakta IP-adress som containern ser för
+Caddy under `Authentication:TrustedProxyIp`. Läs gatewayadressen från just
+webbcontainerns Docker-nät; gissa inte ett helt privat nätverk. Lägg
+hemligheterna i värdens skyddade konfiguration/secret-store, aldrig i Git, issues
+eller Actions-loggar. GitHub behöver `user:email`-scope för att verifiera en
+primär e-postadress; inloggning avvisas om leverantören inte bekräftar e-posten.
+Adressen verifieras men sparas inte i appens cookie eller databas.
+Endast exakt det konfigurerade GitHub-ID:t får adminrollen; Google-inloggning ger
+inte adminbehörighet. Callback-URL:erna är
+`https://larbornhome.asuscomm.com:8010/signin-google` och
+`https://larbornhome.asuscomm.com:8010/signin-github`.
+
+Den befintliga Pi-deployen saknar OAuth-konfiguration och förblir därför
+skrivskyddad med inloggning avstängd. Aktivera inte riktiga användarkonton innan
+integritetspolicy, personuppgiftsansvar och retention är beslutade.
 
 ## Backup, återställning och rollback
 

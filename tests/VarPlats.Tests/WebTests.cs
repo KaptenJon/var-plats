@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -29,6 +30,83 @@ public sealed class WebTests
         Assert.Equal(HttpStatusCode.MethodNotAllowed,
             (await client.PostAsJsonAsync("/api/reports", ReportTests.ValidDraft())).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/ready")).StatusCode);
+    }
+
+    [Fact]
+    public async Task LoginPageKeepsExternalSignInDisabledUntilConfigured()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/login");
+        response.EnsureSuccessStatusCode();
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Inloggning är inte aktiverad", html);
+        Assert.DoesNotContain("Fortsätt med Google", html);
+        Assert.DoesNotContain("Fortsätt med GitHub", html);
+    }
+
+    [Fact]
+    public void ExternalSignInRequiresBothProvidersAndInitialAdmin()
+    {
+        using var factory = CreateFactory("Development", new() { ["Authentication:Enabled"] = "true" });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("OAuth credentials", exception.Message);
+    }
+
+    [Fact]
+    public async Task ConfiguredLoginChallengesGoogleOnlyWithAntiforgeryToken()
+    {
+        await using var factory = CreateFactory("Development", new()
+        {
+            ["Reporting:Demo"] = "true",
+            ["Authentication:Enabled"] = "true",
+            ["Authentication:Google:ClientId"] = "test-google-client",
+            ["Authentication:Google:ClientSecret"] = "test-google-secret",
+            ["Authentication:GitHub:ClientId"] = "test-github-client",
+            ["Authentication:GitHub:ClientSecret"] = "test-github-secret",
+            ["Authentication:AdminGitHubId"] = "10761546",
+            ["Authentication:TrustedProxyIp"] = "127.0.0.1"
+        });
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        var page = await client.GetStringAsync("/login");
+        var token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"")
+            .Groups[1].Value;
+        Assert.False(string.IsNullOrWhiteSpace(token));
+
+        var response = await client.PostAsync("/auth/signin/google",
+            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.StartsWith("https://accounts.google.com/", response.Headers.Location!.ToString());
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1", "127.0.0.1", true)]
+    [InlineData("198.51.100.1", "198.51.100.1", true)]
+    [InlineData("192.0.2.1", "127.0.0.1", false)]
+    public async Task ForwardedHttpsIsTrustedOnlyFromConfiguredProxy(
+        string proxyAddress, string trustedProxyIp, bool expectHsts)
+    {
+        await using var factory = CreateFactory("Production",
+            new()
+            {
+                ["ConnectionStrings:varplats"] = "Host=127.0.0.1;Database=varplats",
+                ["AllowedHosts"] = "varplats.test",
+                ["Authentication:TrustedProxyIp"] = trustedProxyIp
+            },
+            IPAddress.Parse(proxyAddress));
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/login");
+        request.Headers.Host = "varplats.test";
+        request.Headers.Add("X-Forwarded-Proto", "https");
+
+        var response = await client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(expectHsts, response.Headers.Contains("Strict-Transport-Security"));
     }
 
     [Fact]

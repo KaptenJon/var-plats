@@ -33,6 +33,13 @@ services:
       AllowedHosts: ${PUBLIC_HOST:-localhost}
       ConnectionStrings__varplats: ${DATABASE_CONNECTION:?Set DATABASE_CONNECTION in the untracked .env file}
       Map__TileUrl: ${TILE_URL:?Set TILE_URL in the untracked .env file}
+      Authentication__Enabled: ${AUTHENTICATION_ENABLED:-false}
+      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:-}
+      Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:-}
+      Authentication__GitHub__ClientId: ${GITHUB_CLIENT_ID:-}
+      Authentication__GitHub__ClientSecret: ${GITHUB_CLIENT_SECRET:-}
+      Authentication__AdminGitHubId: ${ADMIN_GITHUB_ID:-}
+      Authentication__TrustedProxyIp: ${AUTHENTICATION_TRUSTED_PROXY_IP:-}
     depends_on:
       db:
         condition: service_healthy

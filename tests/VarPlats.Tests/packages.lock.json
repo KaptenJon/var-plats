@@ -472,6 +472,7 @@
       "varplats.web": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.AspNetCore.Authentication.Google": "[11.0.0-rc.3.26522.148, )",
           "Microsoft.EntityFrameworkCore": "[11.0.0-rc.3.26522.148, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[11.0.0-rc.3.26522.148, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL.NetTopologySuite": "[11.0.0-rc.3, )",
@@ -479,6 +480,12 @@
           "VarPlats.Core": "[1.0.0, )",
           "VarPlats.ServiceDefaults": "[1.0.0, )"
         }
+      },
+      "Microsoft.AspNetCore.Authentication.Google": {
+        "type": "CentralTransitive",
+        "requested": "[11.0.0-rc.3.26522.148, )",
+        "resolved": "11.0.0-rc.3.26522.148",
+        "contentHash": "sCPlD0yQRDp6sqzi6TSQ528YlpYrCJdTX4CZz3C1OfdXGJvaHvbprNFH1x+W/K/B3y1fUQO2+3rBexbAVE1aCQ=="
       },
       "Microsoft.EntityFrameworkCore": {
         "type": "CentralTransitive",

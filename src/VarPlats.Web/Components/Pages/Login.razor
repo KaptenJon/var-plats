@@ -1,0 +1,25 @@
+@page "/login"
+@using Microsoft.AspNetCore.Components.Forms
+@inject IConfiguration Configuration
+
+<PageTitle>Logga in – Vår plats</PageTitle>
+<main class="document">
+    <h1>Logga in</h1>
+    @if (!Configuration.GetValue<bool>("Authentication:Enabled"))
+    {
+        <p role="status">Inloggning är inte aktiverad i den här miljön.</p>
+    }
+    else
+    {
+        <p>Konton använder en verifierad e-postadress från Google eller GitHub.</p>
+        <form action="/auth/signin/google" method="post">
+            <AntiforgeryToken />
+            <button type="submit">Fortsätt med Google</button>
+        </form>
+        <form action="/auth/signin/github" method="post">
+            <AntiforgeryToken />
+            <button type="submit">Fortsätt med GitHub</button>
+        </form>
+    }
+    <p><a href="/">Tillbaka till kartan</a></p>
+</main>

@@ -8,6 +8,12 @@
         "resolved": "11.0.0-rc.3.26522.148",
         "contentHash": "/2GrzIWKEE0NRw6e6ZIH468uCw8OUyOoQFISNed1HyztoUevG6q1df+fxJpH6+a97+b4DhKlKHie7hpBZfpWEA=="
       },
+      "Microsoft.AspNetCore.Authentication.Google": {
+        "type": "Direct",
+        "requested": "[11.0.0-rc.3.26522.148, )",
+        "resolved": "11.0.0-rc.3.26522.148",
+        "contentHash": "sCPlD0yQRDp6sqzi6TSQ528YlpYrCJdTX4CZz3C1OfdXGJvaHvbprNFH1x+W/K/B3y1fUQO2+3rBexbAVE1aCQ=="
+      },
       "Microsoft.EntityFrameworkCore": {
         "type": "Direct",
         "requested": "[11.0.0-rc.3.26522.148, )",
