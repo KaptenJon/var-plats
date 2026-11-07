@@ -17,7 +17,11 @@ Actions är pinnade till commits som verifierats via upstream GitHub API.
 Tokenbehörigheter är minimala per jobb. Fork-PR kör inte med secrets eller
 privilegierad token, och `pull_request_target` används inte.
 CodeQL-jobbet med security-events:write kör inte fork-PR. Granska fork-diff innan
-den kommer in i betrodd branch. Inga self-hosted runners används.
+den kommer in i betrodd branch. CI och PR-jobb använder GitHub-hostade runners.
+Release-deployment kan använda en separat ARM64 self-hosted runner med label
+`varplats-deploy`, endast efter ägarens obligatoriska approval i `pi-preview`.
+Den checkar inte ut repositorykod och får inte användas av PR-jobb.
+Se [driftanvisningen](operations.md) för kvarstående risker på en delad värd.
 
 ## Copilot-review är inte aktiverat av detta repo
 

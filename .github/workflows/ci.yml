@@ -27,6 +27,10 @@ jobs:
         run: |
           node --check src/VarPlats.Web/wwwroot/map.js
           node --check src/VarPlats.Web/wwwroot/service-worker.js
+      - name: Deployment script checks
+        run: |
+          bash -n deploy/deploy-release.sh
+          bash tests/deploy-release.test.sh
       - name: Validate Compose without real secrets
         env:
           DATABASE_CONNECTION: Host=db;Database=varplats;Username=varplats;Password=ci-placeholder-only

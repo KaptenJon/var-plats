@@ -33,6 +33,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      web-digest: ${{ steps.web.outputs.digest }}
+      db-digest: ${{ steps.db.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,6 +51,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: web
         with:
           context: .
           file: deploy/Dockerfile
@@ -57,6 +61,7 @@ jobs:
           provenance: mode=max
           sbom: true
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: db
         with:
           context: deploy/postgis
           platforms: linux/arm64
@@ -64,6 +69,34 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}-postgis:${{ github.ref_name }}
           provenance: mode=max
           sbom: true
+  deploy-pi:
+    needs: images
+    if: github.repository == 'KaptenJon/var-plats' && github.ref_type == 'tag'
+    runs-on: [self-hosted, Linux, ARM64, varplats-deploy]
+    environment: pi-preview
+    timeout-minutes: 15
+    concurrency:
+      group: varplats-pi-deployment
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Deploy approved image digests
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          WEB_IMAGE: ghcr.io/kaptenjon/var-plats-web@${{ needs.images.outputs.web-digest }}
+          DB_IMAGE: ghcr.io/kaptenjon/var-plats-postgis@${{ needs.images.outputs.db-digest }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG
+          DOCKER_CONFIG=$(mktemp -d "$RUNNER_TEMP/varplats-docker.XXXXXX")
+          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          unset REGISTRY_TOKEN
+          /home/kapten/apps/varplats/bin/deploy-release.sh
   changelog:
     needs: images
     runs-on: ubuntu-latest

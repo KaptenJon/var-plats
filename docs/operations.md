@@ -27,6 +27,12 @@ amd64 vid kontrollen; därför byggs PostGIS från PostgreSQL + dess Debian-pake
 inte genom ett felaktigt ARM64-antagande. PostGIS-paketet måste ha samma
 PostgreSQL-majorversion som basimagen.
 
+`WEB_PORT` kan exempelvis sättas till `8010`. `WEB_BIND_ADDRESS` är som standard
+`127.0.0.1`; för ett tillfälligt läsprov på ett betrott LAN kan den sättas till
+Pi:ns LAN-adress. Lägg till `pi` och LAN-adressen i `PUBLIC_HOST`, separerade med
+semikolon. Detta ger HTTP, inte TLS. Öppna inte porten mot internet innan kraven
+för publik läsdrift nedan är uppfyllda. Ändra inte andra webbappar eller deras proxy.
+
 Från reporoten på Pi, med POSIX-shell:
 
 ```sh
@@ -81,6 +87,44 @@ inte, men databasen ska försvara samma gräns. Begränsa schemaägaren till mig
 Webb kör som icke-root, med read-only rotfilsystem, tmpfs, borttagna capabilities
 och beständig Data Protection-volym. Kryptering av volym/backup och nycklar är
 driftansvar. Kontrollera volymrättigheter innan första riktiga uppstart.
+
+## GitHub-deployment till en separat Pi-installation
+
+Release-workflow bygger fortfarande på GitHub-hostad ARM64-runner. Jobbet
+`deploy-pi` kör endast för versionstaggar som verifierats tillhöra `main`,
+använder environment `pi-preview` och runner-label `varplats-deploy`. Skapa
+environment med ägaren som obligatorisk granskare och tillåt endast versionstaggar
+innan runnern registreras. Kör aldrig CI, fork-PR eller checkout av PR-kod på Pi:n.
+En self-hosted runner i ett publikt repo är trots detta en risk: workflowkod kan
+ändras, och Docker-medlemskap ger i praktiken administratörsåtkomst till värden.
+Ägaren måste godkänna risken; använd en separat deploymentvärd för stark isolering.
+
+Installationen under `/home/kapten/apps/varplats` innehåller `deploy/compose.yml`,
+`deploy/pi.override.yml`, SQL-init, `deploy/pi-runtime-role.sql` och en skyddad
+`deploy/.env`. Installera `deploy/deploy-release.sh` som
+`bin/deploy-release.sh`. Script och Compose-konfiguration uppdateras separat
+efter granskning, inte genom att Actions checkar ut godtycklig kod på Pi:n.
+Runnern installeras separat under `/home/kapten/actions-runner-varplats` med
+GitHubs officiella `svc.sh` som systemtjänst för `kapten`. Inga befintliga
+systemtjänster, Docker-projekt, proxyregler eller brandväggsregler ska ändras.
+Runnern kräver utgående HTTPS/443 till GitHub och GHCR, inte inkommande SSH.
+
+För en **ny, tom installation** skapas ett slumpat schemaägarlösenord i
+`deploy/secrets/db_password` och ett separat hexlösenord i
+`deploy/secrets/runtime_password`. Katalogen ska vara `700`; `.env` och
+runtime-lösenordet `600`. DB-secret måste vara läsbar av containerns postgres-
+användare, exempelvis `444` innanför den skyddade katalogen. `.env` ska använda
+`Username=varplats_reader` och runtime-lösenordet i `DATABASE_CONNECTION`.
+Det första godkända deploymentjobbet initierar databasen och SELECT-only-rollen
+samt sätter ägarskap på endast projektets Data Protection-volym.
+
+Images hämtas med workflowets exakta SHA-256-digests. GHCR-token används enbart i
+en tillfällig Docker-konfiguration, inte i användarens befintliga registry-login.
+`pi.override.yml` begränsar CPU, RAM, processantal och loggstorlek för den nya
+appen. Senare deployment ändrar **endast webbcontainern**; databasen förblir
+pinnad och inga migrationer körs automatiskt. Schema- och databasimageändringar
+kräver separat granskning och backup. Misslyckad readiness rullar tillbaka till
+föregående webbimage utan att stoppa databasen eller andra appar.
 
 ## Backup, återställning och rollback
 
