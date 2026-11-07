@@ -69,7 +69,7 @@ rollback() {
             echo "Deployment failed; restoring the previous web image." >&2
             export WEB_IMAGE="$previous_web"
             "${compose[@]}" up -d --no-build --no-deps web
-            curl --fail --silent --show-error --retry 15 --retry-connrefused --retry-delay 2 \
+            curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 2 \
                 --max-time 5 "$health_url" > /dev/null || true
         else
             echo "Initial web deployment failed; stopping only the new web container." >&2
@@ -81,7 +81,7 @@ rollback() {
 trap rollback EXIT
 web_changed=true
 "${compose[@]}" up -d --no-build --no-deps web
-curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 \
+curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 2 \
     --max-time 5 "$health_url" > /dev/null
 temporary=$(mktemp "$root/deploy/.env.XXXXXX")
 sed "s|^WEB_IMAGE=.*|WEB_IMAGE=$WEB_IMAGE|" "$config" > "$temporary"

@@ -139,6 +139,28 @@ för processernas totala RAM. Att aktivera saknade kernel-cgroups kan kräva
 bootkonfiguration och omstart; gör inte detta utan en separat underhållsplan
 för alla appar som delar värden.
 
+## HTTPS via befintlig Caddy på egen port
+
+På den delade Pi:n terminerar befintlig systemtjänst Caddy TLS. Webbcontainern
+binds endast till `127.0.0.1:8080` (`WEB_BIND_ADDRESS=127.0.0.1`, `WEB_PORT=8080`)
+och domänen läggs till i `PUBLIC_HOST`. Caddy får ett **nytt, separat** site-block
+på port 8010; befintliga block ändras inte:
+
+```caddyfile
+larbornhome.asuscomm.com:8010 {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Samma värdnamn återanvänder Caddys befintliga certifikat. Validera med
+`caddy validate` och ladda om med `systemctl reload caddy`, inte restart; en
+ogiltig konfiguration avvisas och den gamla fortsätter köra. Routern behöver
+vidarebefordra TCP 8010 till Pi:n. LAN-klienter som använder domännamnet kräver
+NAT-loopback i routern; LAN-IP fungerar inte med TLS eftersom certifikatet gäller
+domänen. Appen litar inte på forwarded headers, så den skickar ingen HSTS och ser
+proxyns klient-IP. Konfigurera kända proxies innan inloggning, säkra cookies eller
+IP-baserade begränsningar införs bakom proxyn.
+
 ## Backup, återställning och rollback
 
 Daglig krypterad backup till en annan enhet, med fastställd retention och
