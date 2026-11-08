@@ -34,6 +34,7 @@ jobs:
       - name: Deployment script checks
         run: |
           bash -n deploy/deploy-release.sh
+          bash -n deploy/publish-release.sh
           bash -n deploy/release-image.sh
           bash -n deploy/verify-release-image.sh
           bash -n tests/report-workflow-db.test.sh
