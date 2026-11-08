@@ -40,21 +40,20 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 
 ## Vad ingår?
 
-| Fungerar nu (publika konton/skrivningar är avstängda som standard) | Inte implementerat ännu |
+| Fungerar nu (publik rapportering är avstängd) | Inte implementerat ännu |
 |---|---|
 | Leaflet-karta, kategorifilter och tillgänglig rapportlista | Rapportkö, överklaganden och missbruksskydd |
 | Validering och rapportering i isolerad lokal demo | Bilder, EXIF-rensning och modereringsverktyg |
-| Google/GitHub-inloggning med verifierad e-post, passkey/FIDO2-inloggning och uttrycklig kontolänkning; avstängt tills det konfigureras | Dokumenterade åtgärder och oberoende bekräftelser |
+| Google/GitHub-inloggning med verifierad e-post, passkey/FIDO2 och uttrycklig kontolänkning; publik registrering aktiveras i den godkända Pi-releasen | Dokumenterade åtgärder och oberoende bekräftelser |
 | EF Core/PostGIS-lagring i lokalt utvecklingsläge | Poäng och organisationsbevakning |
 | Läs-API, livs-/beredskapskontroller, OTLP vid konfiguration | Betalning, native-app och offlinekartor |
 | Installerbart webb/PWA-skal; kräver nätanslutning | |
 
 Produktion är **endast läsning som standard** och kräver databas. Publika
-skrivningar kräver separat aktivering, fungerande autentisering och en manuell
-databasbehörighet; de är inte aktiverade i Pi-deployen. Demo eller lokala
-skrivningar i Production stoppar uppstarten.
-Identitetsschemat och dess separata runtime-grant är manuella och ska först
-granskas, backas upp och köras efter ett uttryckligt lanseringsbeslut.
+skrivningar är fortsatt avstängda och kräver en separat aktivering och
+databasbehörighet. Identitetsschemat och dess begränsade runtime-grant körs
+endast i den taggade, ägargodkända release-workflowen; rapporttabellens grant
+ändras inte. Demo eller lokala skrivningar i Production stoppar uppstarten.
 Organisationsbevakning blir inte officiell kommunal felanmälan.
 
 ## Teknik och drift
@@ -65,8 +64,10 @@ Organisationsbevakning blir inte officiell kommunal felanmälan.
 - [GitHub-kontroller och reviewbegränsningar](docs/github.md)
 - [Säkerhetsmodell och återstående lanseringskrav](SECURITY.md)
 - [Bidra och utveckla](CONTRIBUTING.md)
-- [Villkor](docs/legal/terms-draft.md), [integritet](docs/legal/privacy-draft.md)
-  och [innehållsregler](docs/legal/content-draft.md): **EJ LANSERINGSKLARA utkast**
+- [Villkor](docs/legal/terms.md), [integritet](docs/legal/privacy.md)
+  och [innehållsregler](docs/legal/content-draft.md). Villkor och
+  integritetsinformation är operatörsgodkända men inte externt juridiskt granskade;
+  innehållsregler gäller inte för publik rapportering, som är avstängd.
 
 Karttiles hämtas direkt från OpenStreetMap med synlig attribution och vanlig
 webbläsarcache. Ingen serviceworker cachelagrar, förhämtar eller hämtar karttiles.
@@ -74,8 +75,8 @@ OSM:s community-tjänst har ingen SLA och är inte obegränsad gratis hosting.
 `Map__TileUrl` och `Map__Attribution` kan ändras utan ombyggnad; granska alltid
 leverantörens villkor, integritet och attribution innan byte.
 
-## Öppna beslut före lansering
+## Öppna beslut
 
-Kodlicens, personuppgiftsansvarig/kontaktvägar, rättslig grund och retention,
-Pi-modell/RAM/64-bitars OS, domän/TLS, autentisering, modereringsansvar,
-bildhantering, poängregler och tile-kapacitet. Ingen betaltjänst har aktiverats.
+Kodlicens, extern juridisk granskning, logg- och backuprotation på värden,
+Pi-modell/RAM/64-bitars OS, modereringsansvar, bildhantering, poängregler och
+tile-kapacitet. Ingen betaltjänst har aktiverats.

@@ -82,6 +82,9 @@ jobs:
       contents: read
       packages: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Deploy approved image digests
         shell: bash
         env:
@@ -96,13 +99,29 @@ jobs:
           MAILJET_API_KEY: ${{ secrets.MAILJET_API_KEY }}
           MAILJET_API_SECRET: ${{ secrets.MAILJET_API_SECRET }}
           MAILJET_SENDER_EMAIL: ${{ secrets.MAILJET_SENDER_EMAIL }}
-          AUTHENTICATION_ENABLED: "false"
+          AUTHENTICATION_ENABLED: "true"
           REPORTING_PUBLIC_WRITES: "false"
+          ADMIN_GITHUB_ID: "10761546"
           PUBLIC_BASE_URL: https://larbornhome.asuscomm.com:8010
           PASSKEY_SERVER_DOMAIN: larbornhome.asuscomm.com
           PASSKEY_ORIGIN: https://larbornhome.asuscomm.com:8010
         run: |
           set -euo pipefail
+          install_root=/home/kapten/apps/varplats
+          compose=(docker compose --project-name varplats --env-file "$install_root/deploy/.env"
+            -f "$install_root/deploy/compose.yml" -f "$install_root/deploy/pi.override.yml")
+          web_id=$("${compose[@]}" ps -q web)
+          [[ -n "$web_id" ]]
+          AUTHENTICATION_TRUSTED_PROXY_IP=$(
+            docker inspect --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$web_id"
+          )
+          [[ "$AUTHENTICATION_TRUSTED_PROXY_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          export AUTHENTICATION_TRUSTED_PROXY_IP
+          [[ -f "$install_root/state/database-ready" ]]
+          "${compose[@]}" exec -T db psql -U varplats -d varplats -q -v ON_ERROR_STOP=1 \
+            < "$GITHUB_WORKSPACE/deploy/identity-schema.sql"
+          "${compose[@]}" exec -T db psql -U varplats -d varplats -q -v ON_ERROR_STOP=1 \
+            < "$GITHUB_WORKSPACE/deploy/pi-identity-role.sql"
           export DOCKER_CONFIG
           DOCKER_CONFIG=$(mktemp -d "$RUNNER_TEMP/varplats-docker.XXXXXX")
           trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT

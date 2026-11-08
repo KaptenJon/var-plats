@@ -65,6 +65,40 @@ jobs:
           curl --fail http://localhost:8080/health/ready
           curl --fail http://localhost:8080/api/reports
           docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE varplats_reader NOLOGIN;"
+          docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
+            < deploy/identity-schema.sql
+          docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
+            < deploy/pi-identity-role.sql
+          docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 <<'SQL'
+          SET ROLE varplats_reader;
+          INSERT INTO "AspNetUsers" ("Id", "EmailConfirmed", "PhoneNumberConfirmed",
+              "TwoFactorEnabled", "LockoutEnabled", "AccessFailedCount")
+          VALUES ('00000000-0000-0000-0000-000000000004', false, false, false, false, 0);
+          DO $test$
+          BEGIN
+              IF NOT EXISTS (SELECT 1 FROM "IdentityAccountActivity"
+                  WHERE "UserId" = '00000000-0000-0000-0000-000000000004'
+                    AND "LastSignInAtUtc" IS NULL) THEN
+                  RAISE EXCEPTION 'Identity account creation activity was not recorded';
+              END IF;
+          END
+          $test$;
+          DELETE FROM "AspNetUsers" WHERE "Id" = '00000000-0000-0000-0000-000000000004';
+          DO $test$
+          BEGIN
+              IF EXISTS (SELECT 1 FROM "IdentityAccountActivity"
+                  WHERE "UserId" = '00000000-0000-0000-0000-000000000004') THEN
+                  RAISE EXCEPTION 'Identity account activity did not cascade on deletion';
+              END IF;
+              IF has_table_privilege('varplats_reader', 'reports', 'INSERT') THEN
+                  RAISE EXCEPTION 'Identity grant unexpectedly allows report writes';
+              END IF;
+          END
+          $test$;
+          RESET ROLE;
+          SQL
+          docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
             -c "SELECT PostGIS_Version();" \
             -c "INSERT INTO reports VALUES ('00000000-0000-0000-0000-000000000003','Test på ARM64','Syntetisk CI-rapport utan personuppgifter',0,ST_SetSRID(ST_Point(18.06,59.32),4326)::geography,now(),0);"
           curl --fail --silent http://localhost:8080/api/reports | grep 'Test på ARM64'

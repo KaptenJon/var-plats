@@ -7,7 +7,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
     "AspNetUserLogins",
     "AspNetUserRoles",
     "AspNetUserTokens",
-    "AspNetUserPasskeys"
+    "AspNetUserPasskeys",
+    "IdentityAccountActivity"
 TO varplats_reader;
 
 GRANT USAGE, SELECT ON SEQUENCE

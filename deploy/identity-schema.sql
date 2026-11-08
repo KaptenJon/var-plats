@@ -228,3 +228,73 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261108035738_IdentityAccountActivity') THEN
+    CREATE TABLE "IdentityAccountActivity" (
+        "UserId" uuid NOT NULL,
+        "CreatedAtUtc" timestamp with time zone NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+        "LastSignInAtUtc" timestamp with time zone,
+        CONSTRAINT "PK_IdentityAccountActivity" PRIMARY KEY ("UserId"),
+        CONSTRAINT "FK_IdentityAccountActivity_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261108035738_IdentityAccountActivity') THEN
+    CREATE INDEX "IX_IdentityAccountActivity_CreatedAtUtc" ON "IdentityAccountActivity" ("CreatedAtUtc");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261108035738_IdentityAccountActivity') THEN
+    CREATE INDEX "IX_IdentityAccountActivity_LastSignInAtUtc" ON "IdentityAccountActivity" ("LastSignInAtUtc");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261108035738_IdentityAccountActivity') THEN
+    INSERT INTO public."IdentityAccountActivity" ("UserId", "CreatedAtUtc")
+    SELECT "Id", CURRENT_TIMESTAMP
+    FROM public."AspNetUsers"
+    ON CONFLICT ("UserId") DO NOTHING;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261108035738_IdentityAccountActivity') THEN
+    CREATE OR REPLACE FUNCTION public.varplats_identity_activity_on_user_created()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $function$
+    BEGIN
+        INSERT INTO public."IdentityAccountActivity" ("UserId", "CreatedAtUtc")
+        VALUES (NEW."Id", CURRENT_TIMESTAMP)
+        ON CONFLICT ("UserId") DO NOTHING;
+        RETURN NEW;
+    END;
+    $function$;
+
+    CREATE TRIGGER varplats_identity_activity_after_user_insert
+    AFTER INSERT ON public."AspNetUsers"
+    FOR EACH ROW
+    EXECUTE FUNCTION public.varplats_identity_activity_on_user_created();
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261108035738_IdentityAccountActivity') THEN
+    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+    VALUES ('20261108035738_IdentityAccountActivity', '11.0.0-rc.3.26522.148');
+    END IF;
+END $EF$;
+COMMIT;
+

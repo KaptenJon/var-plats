@@ -15,6 +15,7 @@
     else
     {
         <p>Logga in med en passkey, fysisk FIDO2-säkerhetsnyckel eller ett länkat Google-/GitHub-konto.</p>
+        <p>Genom att skapa ett konto godkänner du <a href="/villkor">villkoren</a> och har läst <a href="/integritet">integritetsinformationen</a>.</p>
         @if (error is not null)
         {
             <p class="error" role="alert">@error</p>
@@ -32,6 +33,7 @@
         <p><a href="/register">Skapa konto med verifierad e-post och passkey</a></p>
         <p><a href="/recover">Återställ passkey med verifierad e-post</a></p>
     }
+    <p><a href="/integritet">Integritet</a> · <a href="/villkor">Villkor</a></p>
     <p><a href="/">Tillbaka till kartan</a></p>
 </main>
 
@@ -45,6 +47,9 @@
 
     [SupplyParameterFromQuery(Name = "registered")]
     private string? Registered { get; set; }
+
+    [SupplyParameterFromQuery(Name = "deleted")]
+    private string? Deleted { get; set; }
 
     [SupplyParameterFromQuery(Name = "link")]
     private string? LinkCode { get; set; }
@@ -62,6 +67,8 @@
                 "E-postadressen används redan. Logga in med ditt befintliga konto och länka sedan leverantören från inloggningsinställningarna.",
             _ when Registered == "1" =>
                 "Om adressen kan användas skickas en bekräftelselänk.",
+            _ when Deleted == "1" =>
+                "Kontot och dess inloggningsmetoder har tagits bort.",
             _ => null
         };
     }

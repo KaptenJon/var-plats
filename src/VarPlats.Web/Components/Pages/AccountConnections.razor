@@ -53,6 +53,15 @@
             </form>
         }
     }
+    @if (!recoveryOnly)
+    {
+        <h2>Ta bort konto</h2>
+        <p>Kontot och dess inloggningsmetoder tas bort från den aktiva databasen. Inga rapporter är kopplade till kontot. Säkerhetskopior kan finnas kvar tills de raderas enligt sin lagringstid.</p>
+        <form action="/auth/account/delete" method="post" onsubmit="return confirm('Ta bort kontot och alla dess inloggningsmetoder? Detta kan inte ångras.');">
+            <AntiforgeryToken />
+            <button type="submit" class="text-button">Ta bort mitt konto</button>
+        </form>
+    }
     <p><a href="/">Tillbaka till kartan</a></p>
 </main>
 
