@@ -73,8 +73,17 @@ jobs:
           done
           curl --fail http://localhost:8080/health/ready
           curl --fail http://localhost:8080/api/reports
-          docker compose -f deploy/compose.yml exec -T web sh -c \
-            'test -f /app/runtimes/linux-arm64/native/libSkiaSharp.so && test -f /app/runtimes/linux-arm64/native/Magick.Native-Q8-arm64.dll.so && ! test -d /app/runtimes/win-x64'
+          docker compose -f deploy/compose.yml exec -T web sh -c '
+            set -e
+            test -f /app/runtimes/linux-arm64/native/libSkiaSharp.so
+            test -f /app/runtimes/linux-arm64/native/Magick.Native-Q8-arm64.dll.so
+            test ! -d /app/runtimes/win-x64
+            test -s /app/THIRD-PARTY-NOTICES.md
+            test -s /app/third-party-notices/Magick.NET/Notice.txt
+            test -s /app/third-party-notices/SkiaSharp/LICENSE.txt
+            test -s /app/third-party-notices/SkiaSharp.NativeAssets.Linux.NoDependencies/LICENSE.txt
+            test -s /app/third-party-notices/SkiaSharp.NativeAssets.Linux.NoDependencies/THIRD-PARTY-NOTICES.txt
+          '
           docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
             -c "CREATE ROLE varplats_reader NOLOGIN;"
           docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \

@@ -9,8 +9,15 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL.NetTopologySuite" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
-    <PackageReference Include="Magick.NET-Q8-AnyCPU" />
-    <PackageReference Include="SkiaSharp" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" GeneratePathProperty="true" />
+    <PackageReference Include="SkiaSharp" GeneratePathProperty="true" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" GeneratePathProperty="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(PkgMagick_NET-Q8-AnyCPU)\Notice.txt" Link="third-party-notices\Magick.NET\Notice.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(PkgSkiaSharp)\LICENSE.txt" Link="third-party-notices\SkiaSharp\LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(PkgSkiaSharp_NativeAssets_Linux_NoDependencies)\LICENSE.txt" Link="third-party-notices\SkiaSharp.NativeAssets.Linux.NoDependencies\LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(PkgSkiaSharp_NativeAssets_Linux_NoDependencies)\THIRD-PARTY-NOTICES.txt" Link="third-party-notices\SkiaSharp.NativeAssets.Linux.NoDependencies\THIRD-PARTY-NOTICES.txt" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

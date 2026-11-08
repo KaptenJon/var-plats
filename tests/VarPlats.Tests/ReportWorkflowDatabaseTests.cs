@@ -241,7 +241,7 @@ public sealed class ReportWorkflowDatabaseTests
         var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser<Guid>>>();
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
         var signIn = scope.ServiceProvider.GetRequiredService<SignInManager<IdentityUser<Guid>>>();
-        Assert.True((await roles.CreateAsync(new IdentityRole<Guid>("Admin") { Id = Guid.NewGuid() })).Succeeded);
+        Assert.NotNull(await roles.FindByNameAsync("Admin"));
         var account = new IdentityUser<Guid>
         {
             Id = Guid.NewGuid(),

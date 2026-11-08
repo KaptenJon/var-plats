@@ -130,8 +130,6 @@ internal sealed class LinuxPrivateDirectory : IDisposable
     private const int Create = 0x40;
     private const int Exclusive = 0x80;
     private const int NonBlock = 0x800;
-    private const int DirectoryFlag = 0x10000;
-    private const int NoFollow = 0x20000;
     private const int CloseOnExec = 0x80000;
     private const int AtSymlinkNoFollow = 0x100;
     private const int AtEmptyPath = 0x1000;
@@ -141,6 +139,10 @@ internal sealed class LinuxPrivateDirectory : IDisposable
     private const ushort RegularFileType = 0x8000;
     private const ushort SocketType = 0xc000;
 
+    // Linux ARM64 uses different O_DIRECTORY and O_NOFOLLOW bits than x64.
+    private static readonly int DirectoryFlag = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? 0x4000 : 0x10000;
+    private static readonly int NoFollow = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? 0x8000 : 0x20000;
+
     private readonly SafeFileHandle handle;
     public int FileDescriptor => handle.DangerousGetHandle().ToInt32();
 
@@ -148,8 +150,10 @@ internal sealed class LinuxPrivateDirectory : IDisposable
 
     public static LinuxPrivateDirectory Open(string path)
     {
-        if (!OperatingSystem.IsLinux() || !Environment.Is64BitProcess || !Path.IsPathFullyQualified(path))
-            throw new InvalidOperationException("Privat bildlagring och skanner kräver 64-bitars Linux.");
+        if (!OperatingSystem.IsLinux()
+            || RuntimeInformation.ProcessArchitecture is not (Architecture.X64 or Architecture.Arm64)
+            || !Path.IsPathFullyQualified(path))
+            throw new InvalidOperationException("Privat bildlagring och skanner kräver Linux på x64 eller ARM64.");
 
         var current = OpenHandle("/", ReadOnly | DirectoryFlag | NoFollow | CloseOnExec);
         try

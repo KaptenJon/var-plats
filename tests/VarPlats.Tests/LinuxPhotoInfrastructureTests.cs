@@ -75,7 +75,7 @@ public sealed class LinuxPhotoInfrastructureTests
             Assert.False(await ScanWithReply(scanner, listener, bytes, "stream: OKAY\0"));
 
             var waiting = scanner.IsCleanAsync(bytes, CancellationToken.None);
-            using var peer = await listener.AcceptAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            using var peer = await AcceptScannerAsync(listener, waiting);
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
         }
         finally
@@ -88,7 +88,7 @@ public sealed class LinuxPhotoInfrastructureTests
         ClamAvUnixScanner scanner, Socket listener, byte[] input, string reply)
     {
         var scan = scanner.IsCleanAsync(input, CancellationToken.None);
-        using var peer = await listener.AcceptAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        using var peer = await AcceptScannerAsync(listener, scan);
         await using var stream = new NetworkStream(peer, ownsSocket: false);
         var command = new byte["zINSTREAM\0"u8.Length];
         await stream.ReadExactlyAsync(command);
@@ -108,6 +108,17 @@ public sealed class LinuxPhotoInfrastructureTests
         Assert.Equal(input, received.ToArray());
         await stream.WriteAsync(Encoding.ASCII.GetBytes(reply));
         return await scan;
+    }
+
+    private static async Task<Socket> AcceptScannerAsync(Socket listener, Task<bool> scan)
+    {
+        var accept = listener.AcceptAsync();
+        if (await Task.WhenAny(accept, scan).WaitAsync(TimeSpan.FromSeconds(5)) == scan)
+        {
+            await scan;
+            throw new InvalidOperationException("The scanner finished before connecting.");
+        }
+        return await accept;
     }
 
     private static string CreatePrivateDirectory()
