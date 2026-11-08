@@ -18,7 +18,7 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261107145943_IdentityAndPasskeysV3";
+    public override string LastMigrationId => "20261108035738_IdentityAccountActivity";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -275,6 +275,28 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("AspNetUserTokens");
             });
 
+        modelBuilder.Entity("VarPlats.Web.Data.IdentityAccountActivity", b =>
+            {
+                b.Property<Guid>("UserId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAtUtc")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                b.Property<DateTimeOffset?>("LastSignInAtUtc")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("UserId");
+
+                b.HasIndex("CreatedAtUtc");
+
+                b.HasIndex("LastSignInAtUtc");
+
+                b.ToTable("IdentityAccountActivity");
+            });
+
         modelBuilder.Entity("VarPlats.Web.Data.ReportEntity", b =>
             {
                 b.Property<Guid>("Id")
@@ -369,6 +391,15 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                 b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
                     .WithMany()
                     .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.IdentityAccountActivity", b =>
+            {
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithOne()
+                    .HasForeignKey("VarPlats.Web.Data.IdentityAccountActivity", "UserId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
             });

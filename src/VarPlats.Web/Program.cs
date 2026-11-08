@@ -106,6 +106,18 @@ if (authenticationEnabled)
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.SlidingExpiration = true;
         options.LoginPath = "/login";
+        options.Events.OnSigningIn = async context =>
+        {
+            var principal = context.Principal;
+            if (principal is null || principal.HasClaim("recovery_only", "true"))
+                return;
+            if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+                throw new InvalidOperationException("The authenticated account has no valid identifier.");
+            var activityStore = context.HttpContext.RequestServices
+                .GetRequiredService<IdentityAccountActivityStore>();
+            await activityStore.RecordSignInAsync(
+                userId, DateTimeOffset.UtcNow, context.HttpContext.RequestAborted);
+        };
     });
     builder.Services.Configure<CookieAuthenticationOptions>(IdentityConstants.ExternalScheme, options =>
     {
@@ -147,6 +159,9 @@ if (authenticationEnabled)
             "Mailjet credentials and a sender email are required.")
         .ValidateOnStart();
     builder.Services.AddHttpClient<MailjetEmailSender>(client => client.Timeout = TimeSpan.FromSeconds(10));
+    builder.Services.AddScoped<IdentityAccountActivityStore>();
+    if (!builder.Environment.IsDevelopment())
+        builder.Services.AddHostedService<IdentityAccountRetentionService>();
 }
 else
 {
@@ -440,6 +455,7 @@ if (authenticationEnabled)
     }).RequireAuthorization();
     app.MapEmailAccountEndpoints(publicBaseUrl!);
     app.MapPasskeyEndpoints();
+    app.MapAccountDeletionEndpoint();
 }
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.Run();

@@ -118,6 +118,32 @@ public sealed class ReportTests
         var passkeyEntity = db.Model.FindEntityType(typeof(IdentityUserPasskey<Guid>))!;
         Assert.Equal("AspNetUserPasskeys", passkeyEntity.GetTableName());
         Assert.Contains(passkeyEntity.GetComplexProperties(), property => property.Name == "Data");
+        var activityEntity = db.Model.FindEntityType(typeof(IdentityAccountActivity))!;
+        Assert.Equal("IdentityAccountActivity", activityEntity.GetTableName());
+        Assert.Contains(activityEntity.GetForeignKeys(),
+            foreignKey => foreignKey.DeleteBehavior == DeleteBehavior.Cascade);
+    }
+
+    [Fact]
+    public void IdentityRetentionUsesLastSignInAndIncludesTheTwelveMonthBoundary()
+    {
+        var now = new DateTimeOffset(2026, 11, 8, 12, 0, 0, TimeSpan.Zero);
+        var cutoff = IdentityAccountRetentionPolicy.GetInactiveCutoff(now);
+        var lastSignIn = new IdentityAccountActivity
+        {
+            CreatedAtUtc = cutoff.AddYears(-1),
+            LastSignInAtUtc = cutoff
+        };
+        var recentlySignedIn = new IdentityAccountActivity
+        {
+            CreatedAtUtc = cutoff.AddYears(-1),
+            LastSignInAtUtc = cutoff.AddTicks(1)
+        };
+        var neverSignedIn = new IdentityAccountActivity { CreatedAtUtc = cutoff };
+
+        Assert.True(IdentityAccountRetentionPolicy.IsInactive(lastSignIn, cutoff));
+        Assert.False(IdentityAccountRetentionPolicy.IsInactive(recentlySignedIn, cutoff));
+        Assert.True(IdentityAccountRetentionPolicy.IsInactive(neverSignedIn, cutoff));
     }
 
     public static ReportDraft ValidDraft() => new()

@@ -46,6 +46,24 @@ public sealed class WebTests
     }
 
     [Fact]
+    public async Task PublicPoliciesDescribeAccountOnlyPreviewAndRightsDeadline()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var privacy = await client.GetStringAsync("/integritet");
+        Assert.Contains("Vem ansvarar för uppgifterna?", privacy);
+        Assert.Contains("12 månaders inaktivitet", privacy);
+        Assert.Contains("senast inom en månad", privacy);
+        Assert.Contains("Rapportering är avstängd", privacy);
+
+        var terms = await client.GetStringAsync("/villkor");
+        Assert.Contains("Operatör och kontakt", terms);
+        Assert.Contains("inte en officiell kommunal felanmälan", terms);
+        Assert.Contains("betalning är avstängda", terms);
+    }
+
+    [Fact]
     public void ExternalSignInRequiresBothProvidersAndInitialAdmin()
     {
         using var factory = CreateFactory("Development", new() { ["Authentication:Enabled"] = "true" });
@@ -96,6 +114,9 @@ public sealed class WebTests
             new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.StartsWith("https://accounts.google.com/", response.Headers.Location!.ToString());
+
+        var deletionResponse = await client.PostAsync("/auth/account/delete", new FormUrlEncodedContent([]));
+        Assert.Equal(HttpStatusCode.Redirect, deletionResponse.StatusCode);
 
         using var passkeyRequest = new HttpRequestMessage(HttpMethod.Post, "/auth/passkeys/request-options")
         {

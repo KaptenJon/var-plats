@@ -1,7 +1,9 @@
 # Säkerhet
 
-Detta är en **förhandsgrund**, inte en säkerhetsgranskad, lanseringsklar tjänst.
-Inga verkliga personuppgifter ska läggas in ännu.
+Detta är en **förhandsgrund**, inte en säkerhetsgranskad, fullständigt lanseringsklar tjänst.
+Använd aldrig verkliga personuppgifter i demo eller test. Den ägargodkända
+`pi-preview`-releasen tar emot kontouppgifter för inloggning; rapportering och
+rapportförfattarlänkning är fortfarande avstängda.
 
 ## Rapportera privat
 
@@ -20,16 +22,20 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   Ingen publik rapport-POST-route finns, och databasen kräver separat manuell grant.
 - Adminborttagning raderar rapporten permanent. Återställning och granskningshistorik
   saknas ännu, så funktionen är inte redo att öppnas för riktiga användare.
-- Autentisering, e-postregistrering och passkeys är avstängda som standard.
+- Autentisering, e-postregistrering och passkeys är avstängda som standard
+  utanför den ägargodkända `pi-preview`-releasen.
   Aktivering lagrar verifierad e-post, externa inloggnings-ID:n och passkey-data.
   Konton länkas bara uttryckligen under en inloggad session; e-postmatchning länkar
   aldrig automatiskt. E-poståterställning ger en engångslänk och en kortlivad,
   begränsad session som inte får rapportera, moderera eller länka leverantörer
   innan en ny passkey har lagts till.
-- Identity-tabeller och passkeydata kräver den manuella migrationen
-  `deploy/identity-schema.sql`; skrivbehörighet kräver separat
-  `deploy/pi-identity-role.sql`. Ingendera ska köras innan backup, återställningsprov,
-  integritets-/retentionsbeslut och uttryckligt lanseringsbeslut.
+- Konton lagras endast för inloggning, återställning och säkerhet. Senaste
+  inloggningstid registreras; inaktiva konton raderas efter 12 månader och
+  användare kan själva radera kontot.
+- Den ägargodkända taggade releasen kör `deploy/identity-schema.sql` och den
+  separata begränsade granten `deploy/pi-identity-role.sql` på Vår plats-databasen.
+  Rapporttabellen och dess grants ändras inte; `deploy/pi-public-write-role.sql`
+  körs inte.
 - Lokal skrivning kräver Development och loopback. Aldrig en publik dev-proxy.
 - Gemensam servervalidering, EF-parametrisering, textkodade Leaflet-popupfält
   och Blazors normala HTML-kodning. Inget användarinnehåll går till `MarkupString`.

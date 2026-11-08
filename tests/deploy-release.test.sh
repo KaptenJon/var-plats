@@ -19,10 +19,16 @@ for expected in \
     'MAILJET_API_KEY: ${{ secrets.MAILJET_API_KEY }}' \
     'MAILJET_API_SECRET: ${{ secrets.MAILJET_API_SECRET }}' \
     'MAILJET_SENDER_EMAIL: ${{ secrets.MAILJET_SENDER_EMAIL }}' \
-    'AUTHENTICATION_ENABLED: "false"' \
-    'REPORTING_PUBLIC_WRITES: "false"'; do
+    'AUTHENTICATION_ENABLED: "true"' \
+    'REPORTING_PUBLIC_WRITES: "false"' \
+    'ADMIN_GITHUB_ID: "10761546"' \
+    'deploy/identity-schema.sql' \
+    'deploy/pi-identity-role.sql' \
+    'AUTHENTICATION_TRUSTED_PROXY_IP'; do
     grep -Fq "$expected" "$release_workflow"
 done
+! grep -Fq 'deploy/pi-public-write-role.sql' "$release_workflow"
+! grep -Eiq 'CREATE TABLE "?reports"?|ALTER TABLE "?reports"?' "$root/deploy/identity-schema.sql"
 export TEST_LOG="$fixture/docker.log" TEST_CURL_COUNT="$fixture/curl.count"
 cat > "$fixture/mocks/docker" <<'MOCK'
 #!/usr/bin/env bash

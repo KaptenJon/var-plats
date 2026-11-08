@@ -17,6 +17,13 @@ public sealed class ReportEntity
     public ReportStatus Status { get; set; }
 }
 
+public sealed class IdentityAccountActivity
+{
+    public Guid UserId { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset? LastSignInAtUtc { get; set; }
+}
+
 public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
     : IdentityDbContext<
         IdentityUser<Guid>,
@@ -30,6 +37,7 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
         IdentityUserPasskey<Guid>>(options)
 {
     public DbSet<ReportEntity> Reports => Set<ReportEntity>();
+    public DbSet<IdentityAccountActivity> IdentityAccountActivities => Set<IdentityAccountActivity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,6 +63,20 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             entity.Property(report => report.Description).HasMaxLength(1000);
             entity.Property(report => report.Location).HasColumnType("geography (point, 4326)");
             entity.HasIndex(report => report.Location).HasMethod("gist");
+        });
+        modelBuilder.Entity<IdentityAccountActivity>(entity =>
+        {
+            entity.ToTable("IdentityAccountActivity");
+            entity.HasKey(activity => activity.UserId);
+            entity.Property(activity => activity.CreatedAtUtc)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP");
+            entity.HasOne<IdentityUser<Guid>>()
+                .WithOne()
+                .HasForeignKey<IdentityAccountActivity>(activity => activity.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+            entity.HasIndex(activity => activity.CreatedAtUtc);
+            entity.HasIndex(activity => activity.LastSignInAtUtc);
         });
     }
 }

@@ -114,16 +114,18 @@ Releasejobbet läser `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
 `GITHUB_CLIENT_ID` och `GITHUB_CLIENT_SECRET`. De skickas till webbcontainern vid
 varje godkänd deploy och skrivs inte till Git eller deployens `.env`; Docker-
 administratörer på Pi:n kan dock läsa containerns miljö. Begränsa därför runner-
-och värdåtkomst. Att secrets finns konfigurerade aktiverar inte inloggning:
-releasejobbet håller `AUTHENTICATION_ENABLED` och `REPORTING_PUBLIC_WRITES` till
-`false`. Aktivering kräver en separat granskad ändring och de manuella Identity-
-databasstegen nedan.
+och värdåtkomst. Den godkända release-workflowen aktiverar autentisering men
+håller `REPORTING_PUBLIC_WRITES` till `false`. Den läser Caddys exakta IPv4-gateway
+från det befintliga Vår plats-webbcontainerns nätverk; den gissar inte proxy-IP.
 
 Installationen under `/home/kapten/apps/varplats` innehåller `deploy/compose.yml`,
 `deploy/pi.override.yml`, SQL-init, `deploy/pi-runtime-role.sql` och en skyddad
 `deploy/.env`. Installera `deploy/deploy-release.sh` som
 `bin/deploy-release.sh`. Script och Compose-konfiguration uppdateras separat
-efter granskning, inte genom att Actions checkar ut godtycklig kod på Pi:n.
+efter granskning. Releasejobbet checkar endast ut en verifierad tagg på `main`
+efter ARM64-bygge och `pi-preview`-ägargodkännande, för att applicera de
+granskade Identity-SQL-filerna; det checkar inte ut PR-kod och kopierar inte
+workflowkod till deploymentinstallationen.
 Runnern installeras separat under `/home/kapten/actions-runner-varplats` med
 GitHubs officiella `svc.sh` som systemtjänst för `kapten`. Inga befintliga
 systemtjänster, Docker-projekt, proxyregler eller brandväggsregler ska ändras.
@@ -145,8 +147,12 @@ Images hämtas med workflowets exakta SHA-256-digests. GHCR-token används enbar
 en tillfällig Docker-konfiguration, inte i användarens befintliga registry-login.
 `pi.override.yml` begränsar CPU, RAM, processantal och loggstorlek för den nya
 appen. Senare deployment ändrar **endast webbcontainern**; databasen förblir
-pinnad och inga migrationer körs automatiskt. Schema- och databasimageändringar
-kräver separat granskning och backup. Misslyckad readiness rullar tillbaka till
+pinnad. Den godkända autentiseringsreleasen kör den idempotenta
+`deploy/identity-schema.sql` och den begränsade `deploy/pi-identity-role.sql`
+som `varplats`-ägaren innan webbcontainern uppdateras. Detta påverkar bara
+Identity/passkeytabeller och deras runtime-grant, inte rapporttabellen, dess
+data eller rapportbehörigheter. Övriga schema- och databasimageändringar kräver
+separat granskning och backup. Misslyckad readiness rullar tillbaka till
 föregående webbimage utan att stoppa databasen eller andra appar.
 
 Verifiera `docker info` för stöd för minnes-cgroups: vissa Pi-kärnor ignorerar
@@ -183,15 +189,17 @@ utan att godtyckliga klienter kan förfalska proxyheaders.
 
 ### Extern inloggning
 
-Google- och GitHub-inloggning är avstängd som standard. Aktivering kräver OAuth-
-client ID och client secret för båda leverantörerna, ägarens stabila numeriska
+Google- och GitHub-inloggning är avstängd som standard utanför den
+ägargodkända `pi-preview`-releasen. Aktivering kräver OAuth-client ID och client
+secret för båda leverantörerna, ägarens stabila numeriska
 `Authentication:AdminGitHubId` och den exakta IP-adress som containern ser för
 Caddy under `Authentication:TrustedProxyIp`. Läs gatewayadressen från just
 webbcontainerns Docker-nät; gissa inte ett helt privat nätverk. Lägg
 hemligheterna i värdens skyddade konfiguration/secret-store, aldrig i Git, issues
 eller Actions-loggar. GitHub behöver `user:email`-scope för att verifiera en
 primär e-postadress; inloggning avvisas om leverantören inte bekräftar e-posten.
-Adressen verifieras men sparas inte i appens cookie eller databas.
+Den verifierade e-postadressen sparas i kontodatabasen men inte i
+autentiseringscookien.
 Endast exakt det konfigurerade GitHub-ID:t får adminrollen; Google-inloggning ger
 inte adminbehörighet. Google- och GitHub-konton länkas endast explicit från en
 inloggad session; samma e-postadress länkar aldrig automatiskt. Callback-URL:erna är
@@ -208,24 +216,25 @@ upptäckbara (resident) inloggningsuppgifter så att e-postadress inte behöver
 skickas och konton inte kan upptäckas genom begäran om WebAuthn-alternativ.
 Säkerhetsnyckeln måste därför stödja resident credentials.
 
-Identity skapar ny persondata och är fortfarande avstängt. Innan en separat
-lansering: ta krypterad backup och verifiera återställning, granska
-integritet/retention, kör efter `deploy/sql/001-initial.sql` manuellt
-`deploy/identity-schema.sql` som databasägaren och granska resultatet. Scriptet
-lägger endast till Identity- och passkeytabeller samt roller; det skapar eller
-ändrar inte rapporttabellen. Först efter ett separat beslut om autentisering får
-`deploy/pi-identity-role.sql`
-appliceras för begränsad skrivning till Identity-tabellerna. Det ger inte
-rapportskrivning; `deploy/pi-public-write-role.sql` är en annan spärr och ska
-fortsatt vara orörd. Ändra inte Pi eller andra appar som delat på värden utan
-separat underhållsbeslut.
+Identity-tabellerna innehåller e-postadress, leverantörs-ID:n och passkeydata.
+Den godkända release-workflowen kör Identity-schemat och den Identity-begränsade
+runtime-granten efter taggverifiering och environment-ägargodkännande. Schemat
+lägger även till kontoskapande-/senaste-inloggningstidpunkt; konton tas bort när
+de varit inaktiva i 12 månader, med kontroll varje dygn. Självradering finns på
+sidan Inloggningsmetoder. `deploy/pi-public-write-role.sql` är en separat spärr
+och körs inte; rapportskrivning förblir avstängd.
 
-Den befintliga Pi-deployen saknar OAuth-konfiguration och förblir därför
-skrivskyddad med inloggning avstängd. Aktivera inte riktiga användarkonton innan
-integritetspolicy, personuppgiftsansvar och retention är beslutade.
+Operatörens lagringsregel är högst 12 månader för krypterade säkerhetskopior.
+Backupmålet ligger utanför denna release-workflow: konfigurera och kontrollera
+dess automatiska utgång separat. Vid begäran om radering ska uppgifter tas bort
+från den aktiva databasen utan onödigt dröjsmål; användaren får svar inom en
+månad, med högst två månaders förlängning för komplexa ärenden och besked inom
+den första månaden. Säkerhetskopior kan innehålla raderade uppgifter tills
+rotationen löper ut.
+
 `REPORTING_PUBLIC_WRITES` är `false` i Compose-exemplet. Att sätta den till `true`
 kräver även fungerande OAuth-konfiguration och den separata manuella SQL-granten.
-Gör inget av detta på Pi:n utan separat lanseringsbeslut.
+Den aktuella releasen öppnar inte rapportskrivning.
 
 ## Backup, återställning och rollback
 

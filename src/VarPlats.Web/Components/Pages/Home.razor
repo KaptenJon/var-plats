@@ -51,7 +51,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         }
         else
         {
-            <strong>Förhandsversion · endast läsning</strong><span>Rapportering är avstängd. Konton, åtgärder, bekräftelser och bevakning öppnas separat.</span>
+            <strong>Förhandsversion · endast läsning</strong><span>Kontoinloggning kan användas för att hantera inloggningsmetoder. Rapportering, åtgärder, bekräftelser och bevakning är avstängda.</span>
         }
     </div>
     @if (Mode.PublicWrites && !canReport)
@@ -138,7 +138,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     </div>
     <p class="save-status" role="status">@status</p>
 </main>
-<footer><span>Gemensamma platser. Gemensam omtanke.</span><a href="/om">Integritet, säkerhet och utkast till villkor</a><a href="https://www.openstreetmap.org/fixthemap">Rapportera kartfel</a></footer>
+<footer><span>Gemensamma platser. Gemensam omtanke.</span><a href="/integritet">Integritet</a><a href="/villkor">Villkor</a><a href="https://www.openstreetmap.org/fixthemap">Rapportera kartfel</a></footer>
 <div id="blazor-error-ui" role="alert">Anslutningen har avbrutits eller ett fel uppstod. <a href="/">Ladda om</a>. Osparad lokal demo kan försvinna.</div>
 
 @code {
