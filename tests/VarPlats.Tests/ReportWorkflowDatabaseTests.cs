@@ -95,7 +95,7 @@ public sealed class ReportWorkflowDatabaseTests
         var previewInactive = new IdentityUser<Guid> { Id = Guid.NewGuid(), UserName = "synthetic-inactive-preview" };
         Assert.True((await userManager.CreateAsync(previewUser)).Succeeded);
         Assert.True((await userManager.CreateAsync(previewInactive)).Succeeded);
-        await DeleteAccountViaEndpoint(connectionString, previewUser.Id);
+        await DeleteAccountViaEndpoint(connectionString, previewUser.Id, legacy.Id);
         await identityDb.IdentityAccountActivities.Where(activity => activity.UserId == previewInactive.Id)
             .ExecuteUpdateAsync(update => update.SetProperty(activity => activity.CreatedAtUtc, oldDate));
         var retention = new IdentityAccountActivityStore(identityDb);
@@ -180,7 +180,7 @@ public sealed class ReportWorkflowDatabaseTests
         using var photoScenario = new PhotoWorkflowDatabaseScenario(contexts, firstMember, secondMember, admin);
         await photoScenario.BeforeAccountDeletionAsync();
 
-        await DeleteAccountViaEndpoint(connectionString, firstUser.Id);
+        await DeleteAccountViaEndpoint(connectionString, firstUser.Id, legacy.Id);
         await using (var check = contexts.CreateDbContext())
         {
             var retained = await check.ReportSubmissions.AsNoTracking().SingleAsync(item => item.Id == approved.Id);
@@ -397,7 +397,7 @@ public sealed class ReportWorkflowDatabaseTests
     private static ClaimsPrincipal Account(Guid id, string role) => new(new ClaimsIdentity(
         [new Claim(ClaimTypes.NameIdentifier, id.ToString()), new Claim(ClaimTypes.Role, role)], "test"));
 
-    private static async Task DeleteAccountViaEndpoint(string connectionString, Guid userId)
+    private static async Task DeleteAccountViaEndpoint(string connectionString, Guid userId, Guid legacyReportId)
     {
         await using var web = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -426,6 +426,11 @@ public sealed class ReportWorkflowDatabaseTests
         client.DefaultRequestHeaders.Add("X-Synthetic-Role", "Member");
         client.DefaultRequestHeaders.Add("X-Synthetic-Id", userId.ToString());
         var page = await client.GetStringAsync("/");
+        Assert.Contains("Syntetisk äldre rapport", WebUtility.HtmlDecode(page));
+        Assert.Contains("endast läsning", WebUtility.HtmlDecode(page));
+        var details = WebUtility.HtmlDecode(await client.GetStringAsync($"/rapporter/{legacyReportId}"));
+        Assert.Contains("Syntetisk äldre rapport", details);
+        Assert.Contains("Åtgärdsuppgifter är dolda", details);
         var token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"")
             .Groups[1].Value;
         Assert.False(string.IsNullOrWhiteSpace(token));
