@@ -83,6 +83,27 @@ web_changed=true
 "${compose[@]}" up -d --no-build --no-deps web
 curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 2 \
     --max-time 5 "$health_url" > /dev/null
+if [[ ${AUTHENTICATION_ENABLED:-false} == true ]]; then
+    public_host=${PUBLIC_BASE_URL#*://}
+    public_host=${public_host%%/*}
+    [[ -n "$public_host" ]] || {
+        echo "Authentication smoke test requires PUBLIC_BASE_URL." >&2
+        exit 1
+    }
+    web_url="http://$bind_address:$port"
+    login_html=$(curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 2 \
+        --max-time 5 -H "Host: $public_host" "$web_url/login")
+    if ! grep -Fq "Logga in med en passkey" <<< "$login_html"; then
+        echo "Authentication smoke test failed: the login UI is not enabled." >&2
+        exit 1
+    fi
+    auth_route_status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+        --max-time 5 -H "Host: $public_host" "$web_url/auth/signin/google")
+    if [[ $auth_route_status != 405 ]]; then
+        echo "Authentication smoke test failed: external sign-in route is unavailable." >&2
+        exit 1
+    fi
+fi
 temporary=$(mktemp "$root/deploy/.env.XXXXXX")
 sed "s|^WEB_IMAGE=.*|WEB_IMAGE=$WEB_IMAGE|" "$config" > "$temporary"
 mv "$temporary" "$config"

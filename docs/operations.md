@@ -120,12 +120,12 @@ från det befintliga Vår plats-webbcontainerns nätverk; den gissar inte proxy-
 
 Installationen under `/home/kapten/apps/varplats` innehåller `deploy/compose.yml`,
 `deploy/pi.override.yml`, SQL-init, `deploy/pi-runtime-role.sql` och en skyddad
-`deploy/.env`. Installera `deploy/deploy-release.sh` som
-`bin/deploy-release.sh`. Script och Compose-konfiguration uppdateras separat
-efter granskning. Releasejobbet checkar endast ut en verifierad tagg på `main`
-efter ARM64-bygge och `pi-preview`-ägargodkännande, för att applicera de
-granskade Identity-SQL-filerna; det checkar inte ut PR-kod och kopierar inte
-workflowkod till deploymentinstallationen.
+`deploy/.env`. Releasejobbet checkar endast ut en verifierad tagg på `main`
+efter ARM64-bygge och `pi-preview`-ägargodkännande. Från den godkända taggen
+uppdaterar det endast Vår plats-installationens Compose-filer och
+`bin/deploy-release.sh`, applicerar de granskade Identity-SQL-filerna och
+driftsätter webbcontainern. Det ändrar inte andra Compose-projekt, Caddy eller
+värdtjänster och checkar inte ut PR-kod.
 Runnern installeras separat under `/home/kapten/actions-runner-varplats` med
 GitHubs officiella `svc.sh` som systemtjänst för `kapten`. Inga befintliga
 systemtjänster, Docker-projekt, proxyregler eller brandväggsregler ska ändras.
@@ -152,8 +152,10 @@ pinnad. Den godkända autentiseringsreleasen kör den idempotenta
 som `varplats`-ägaren innan webbcontainern uppdateras. Detta påverkar bara
 Identity/passkeytabeller och deras runtime-grant, inte rapporttabellen, dess
 data eller rapportbehörigheter. Övriga schema- och databasimageändringar kräver
-separat granskning och backup. Misslyckad readiness rullar tillbaka till
-föregående webbimage utan att stoppa databasen eller andra appar.
+separat granskning och backup. Misslyckad readiness eller auth-smoketest rullar
+tillbaka webbimagen utan att stoppa databasen eller andra appar. När autentisering
+är aktiverad kontrolleras att inloggningsalternativen visas och att en auth-route
+är mappad.
 
 Verifiera `docker info` för stöd för minnes-cgroups: vissa Pi-kärnor ignorerar
 `mem_limit`. Pi-override begränsar även .NET:s GC-heap till 256 MiB och sänker
