@@ -13,7 +13,8 @@ RUN case "${TARGETARCH:-$(uname -m)}" in \
     esac \
     && dotnet restore src/VarPlats.Web/VarPlats.Web.csproj --locked-mode \
     && dotnet publish src/VarPlats.Web/VarPlats.Web.csproj -c Release --no-restore -o /publish /p:UseAppHost=false \
-    && dotnet run --project tools/ThirdPartyNoticeGenerator/ThirdPartyNoticeGenerator.csproj -c Release -- /publish "${NUGET_PACKAGES:-/root/.nuget/packages}" "linux-$arch" \
+    && dotnet restore tools/ThirdPartyNoticeGenerator/ThirdPartyNoticeGenerator.csproj --locked-mode \
+    && dotnet run --project tools/ThirdPartyNoticeGenerator/ThirdPartyNoticeGenerator.csproj -c Release --no-restore -- /publish "${NUGET_PACKAGES:-/root/.nuget/packages}" "linux-$arch" \
     && mkdir -p /app/runtimes \
     && find /publish -mindepth 1 -maxdepth 1 ! -name runtimes -exec cp -a {} /app/ \; \
     && for rid in "linux-$arch" linux "unix-$arch" unix any; do \
