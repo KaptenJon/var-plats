@@ -1,7 +1,8 @@
 # Tredjepartskomponenter
 
-Projektets egen kodlicens är **inte vald**. Följande information väljer inte en
-licens för projektet och ersätter inte respektive komponents licensvillkor.
+Projektets egen kod omfattas av MIT-licensen i `LICENSE`. Den licensen ändrar
+inte respektive tredjepartskomponents villkor. Följande är en inventering, inte
+en fullständig licensgranskning.
 
 - Leaflet 1.9.4: BSD-2-Clause, full licens i
   `src/VarPlats.Web/wwwroot/vendor/leaflet/LICENSE`.
@@ -10,7 +11,7 @@ licens för projektet och ersätter inte respektive komponents licensvillkor.
 - Npgsql och Npgsql EF Core: PostgreSQL-licens enligt paketen.
 - SkiaSharp/Skia och Magick.NET/ImageMagick: se respektive pakets och
   inbyggda native-komponenters licenser och medföljande meddelanden i
-  `third-party-notices/` i publicerad webbapp eller webbimage.
+  `third-party-notices/` i webbimagen.
 - ClamAV ingår inte i webbimagen; en eventuell lokal skanner har egna licens-
   och distributionsvillkor.
 - PostgreSQL/PostGIS och Debian-paket i databasimagen: respektive upstream-
@@ -25,8 +26,10 @@ SBOM i release hjälper inventeringen men är inte en juridisk licensgranskning.
 ## Återstående distributionsgranskning
 
 De befintliga webb- och databasimagernas GHCR-taggar var publikt nedladdningsbara
-vid kontroll 2026-11-08. Publicera inte nya images innan tillämpliga licens- och
-källkodsvillkor har inventerats och uppfyllts.
+vid kontroll 2026-11-08. Publicera inte nya offentliga images innan tillämpliga
+licens- och källkodsvillkor har inventerats och uppfyllts. Den privata
+förhandsmiljön är inte ett godkännande för extern distribution och undanröjer
+inte eventuella licens- eller källkodskrav.
 
 - Bildpaketens egna meddelanden medföljer webbimagen, men en kontroll av
   `dotnet publish` visade att bland annat Radzens och NetTopologySuites

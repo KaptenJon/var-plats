@@ -8,4 +8,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/VarPlats.Tests/VarPlats.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/ThirdPartyNoticeGenerator/ThirdPartyNoticeGenerator.csproj" />
+  </Folder>
 </Solution>

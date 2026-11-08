@@ -34,6 +34,8 @@ jobs:
       - name: Deployment script checks
         run: |
           bash -n deploy/deploy-release.sh
+          bash -n deploy/release-image.sh
+          bash -n deploy/verify-release-image.sh
           bash -n tests/report-workflow-db.test.sh
           bash tests/deploy-release.test.sh
       - name: Validate Compose without real secrets
@@ -78,11 +80,14 @@ jobs:
             test -f /app/runtimes/linux-arm64/native/libSkiaSharp.so
             test -f /app/runtimes/linux-arm64/native/Magick.Native-Q8-arm64.dll.so
             test ! -d /app/runtimes/win-x64
+            test -s /app/LICENSE
             test -s /app/THIRD-PARTY-NOTICES.md
-            test -s /app/third-party-notices/Magick.NET/Notice.txt
-            test -s /app/third-party-notices/SkiaSharp/LICENSE.txt
-            test -s /app/third-party-notices/SkiaSharp.NativeAssets.Linux.NoDependencies/LICENSE.txt
-            test -s /app/third-party-notices/SkiaSharp.NativeAssets.Linux.NoDependencies/THIRD-PARTY-NOTICES.txt
+            find /app/third-party-notices/nuget -type f -path "*Magick.NET-Q8-AnyCPU*" -iname Notice.txt -print -quit | grep -q .
+            find /app/third-party-notices/nuget -type f -path "*SkiaSharp/*" -iname LICENSE.txt -print -quit | grep -q .
+            find /app/third-party-notices/nuget -type f -path "*SkiaSharp.NativeAssets.Linux.NoDependencies*" -iname THIRD-PARTY-NOTICES.txt -print -quit | grep -q .
+            test -s /app/third-party-notices/nuget-packages.json
+            grep -q "NetTopologySuite.IO.PostGis" /app/third-party-notices/nuget-packages.json
+            grep -q "80d8318173db37bd2ee9f3b53c4c736a1267e689" /app/third-party-notices/nuget-packages.json
           '
           docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
             -c "CREATE ROLE varplats_reader NOLOGIN;"
