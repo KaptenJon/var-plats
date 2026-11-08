@@ -2,6 +2,15 @@
   "version": 2,
   "dependencies": {
     "net11.0": {
+      "Magick.NET-Q8-AnyCPU": {
+        "type": "Direct",
+        "requested": "[15.1.0, )",
+        "resolved": "15.1.0",
+        "contentHash": "nHJpUfEkhiDu5XJAymHWQBCinVQJABTK2j6haHqs650UPUP9iEMqN73VNu8m+YyoyEp5gGwO65hqivhgzzpfnQ==",
+        "dependencies": {
+          "Magick.NET.Core": "15.1.0"
+        }
+      },
       "Microsoft.AspNetCore.App.Internal.Assets": {
         "type": "Direct",
         "requested": "[11.0.0-rc.3.26522.148, )",
@@ -77,10 +86,31 @@
           "Microsoft.Extensions.AI": "10.11.0"
         }
       },
+      "SkiaSharp": {
+        "type": "Direct",
+        "requested": "[4.155.0, )",
+        "resolved": "4.155.0",
+        "contentHash": "uWKxXehFrFm+CpNmP9l2IQzASoQYaQoj4QWn/LVMi3r2h++snhqdFlEAcnL8gDJUBIclN+EoLAjCZHxCsZCH2w==",
+        "dependencies": {
+          "SkiaSharp.NativeAssets.Win32": "4.155.0",
+          "SkiaSharp.NativeAssets.macOS": "4.155.0"
+        }
+      },
+      "SkiaSharp.NativeAssets.Linux.NoDependencies": {
+        "type": "Direct",
+        "requested": "[4.155.0, )",
+        "resolved": "4.155.0",
+        "contentHash": "Z5GYcFdUNn+LwWDCcyOqLuhF9bvtCW+HChDwnH+1mwHSbyowIO+JwOzckzxROh/MXbjPdZxnbkMnCXbIUhe80w=="
+      },
       "Humanizer.Core": {
         "type": "Transitive",
         "resolved": "3.0.10",
         "contentHash": "yZIhtw8sYuvsONzQbZxWpR60tMWYHXoo0DL6nyOqSFiU5POjBTSEyWFpTQtJEZuy+oqiYTXKXY/Mjx7KnqIQFw=="
+      },
+      "Magick.NET.Core": {
+        "type": "Transitive",
+        "resolved": "15.1.0",
+        "contentHash": "WIaemRN4tJvw5BNUfsO8/V3LojV5FOCojQ/sQ4ruXme1o2frRYfcvHPhKV5E6TbYoEdVEvtGX+8Wbut0F2lJHg=="
       },
       "Microsoft.Build.Framework": {
         "type": "Transitive",
@@ -262,6 +292,16 @@
         "dependencies": {
           "OpenTelemetry.Api": "1.20.1"
         }
+      },
+      "SkiaSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "4.155.0",
+        "contentHash": "NaXi75WZBJWW1+zdHTdh319vBpPR2m04uznYZ9Z2BcIue7Ip4YNIycMgWjz88giLP0fVh5FCcng66+if/tqF8Q=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "4.155.0",
+        "contentHash": "mTpojWcWzoB8mERp8Du9/T6KnBHo1nguYiLdy0AxjIsA6xHIDdo4xAU7FB6CxW9ATEkR77drNFTv84RuUDurvQ=="
       },
       "System.CodeDom": {
         "type": "Transitive",

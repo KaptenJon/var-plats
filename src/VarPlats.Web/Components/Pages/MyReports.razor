@@ -1,0 +1,115 @@
+@page "/mina-rapporter"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using VarPlats.Web.Photos
+@inject ReportCommands Commands
+@inject ReportingMode Mode
+@inject IPhotoReader Photos
+@inject ILogger<MyReports> Logger
+
+<PageTitle>Mina rapporter – Vår plats</PageTitle>
+<main class="document">
+    <h1>Mina rapporter</h1>
+    @if (!Mode.WorkflowEnabled)
+    {
+        <p>Rapportgranskning är inte aktiverad i den här miljön.</p>
+    }
+    else if (!allowed)
+    {
+        <p>Logga in med ett behörigt konto utanför återställningsläget för att se dina rapporter.</p>
+    }
+    else
+    {
+        <p>Inskickade rapporter väntar på granskning och visas offentligt först om de godkänns. Rapporter som en administratör tar bort visas inte längre här.</p>
+        <p>Om kontot tas bort behålls rapporterna utan kopplingen till kontot. Undvik alltid personuppgifter i fritexten.</p>
+        @if (error is not null)
+        {
+            <p class="error" role="alert">@error</p>
+        }
+        @if (loading)
+        {
+            <p role="status">Hämtar dina rapporter…</p>
+        }
+        else if (submissions.Count == 0 && error is null)
+        {
+            <p>Du har inga rapporter att visa.</p>
+        }
+        else
+        {
+            <p>Senaste först · högst 200 rapporter</p>
+            <ul class="report-list">
+                @foreach (var submission in submissions)
+                {
+                    <li>
+                        <article style="overflow-wrap: anywhere">
+                            <h2>@submission.Report.Title</h2>
+                            <p><strong>@ReviewName(submission.ReviewStatus)</strong> · @submission.Report.CreatedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC</p>
+                            <p>@submission.Report.Description</p>
+                            @if (reportPhotoIds.Contains(submission.Report.Id))
+                            {
+                                <img class="report-photo" src="@($"/photos/reports/{submission.Report.Id}")" alt="Uppladdad bild till din rapport" loading="lazy" />
+                            }
+                        </article>
+                    </li>
+                }
+            </ul>
+        }
+        <button type="button" class="text-button" @onclick="Reload">Uppdatera status</button>
+    }
+    <p><a href="/">Tillbaka till kartan</a></p>
+</main>
+
+@code {
+    private IReadOnlyList<ReportSubmission> submissions = [];
+    private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>();
+    private bool allowed, loading;
+    private string? error;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        allowed = ReportCommands.CanReport((await AuthenticationStateTask).User);
+        if (Mode.WorkflowEnabled && allowed)
+            await Reload();
+    }
+
+    private async Task Reload()
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            var user = (await AuthenticationStateTask).User;
+            submissions = await Commands.ListOwnAsync(user);
+            reportPhotoIds = await Photos.VisibleReportIdsAsync(
+                user, submissions.Select(submission => submission.Report.Id).ToArray());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            submissions = [];
+            reportPhotoIds = new HashSet<Guid>();
+            error = "Du har inte behörighet att visa rapporterna.";
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Egna rapporter kunde inte hämtas.");
+            submissions = [];
+            reportPhotoIds = new HashSet<Guid>();
+            error = "Dina rapporter kunde inte hämtas. Försök igen senare.";
+        }
+        finally { loading = false; }
+    }
+
+    private static string ReviewName(ReportReviewStatus review) => review switch
+    {
+        ReportReviewStatus.Pending => "Väntar på granskning",
+        ReportReviewStatus.Approved => "Godkänd och publicerad",
+        ReportReviewStatus.Rejected => "Avvisad",
+        _ => "Okänd granskningsstatus"
+    };
+}

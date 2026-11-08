@@ -1,0 +1,163 @@
+@page "/moderering"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using VarPlats.Web.Photos
+@using VarPlats.Web.Data
+@inject ReportCommands Commands
+@inject ReportingMode Mode
+@inject IPhotoReader Photos
+@inject IJSRuntime JS
+@inject ILogger<Moderation> Logger
+
+<PageTitle>Granskningskö – Vår plats</PageTitle>
+<main class="document">
+    <h1>Granskningskö</h1>
+    @if (!Mode.WorkflowEnabled)
+    {
+        <p>Rapportgranskning är inte aktiverad i den här miljön.</p>
+    }
+    else if (!allowed)
+    {
+        <p>Endast administratörer utanför återställningsläget kan visa granskningskön.</p>
+    }
+    else
+    {
+        <p>Rapporter visas offentligt först efter godkännande. Granska innehåll och plats, även om rapportören har ombetts att inte ange personuppgifter.</p>
+        @if (!Mode.PublicWorkflow)
+        {
+            <p>Granskningskön är tillgänglig för läsning, men ändringar är avstängda.</p>
+        }
+        @if (error is not null)
+        {
+            <p class="error" role="alert">@error</p>
+        }
+        @if (status is not null)
+        {
+            <p role="status">@status</p>
+        }
+        @if (loading)
+        {
+            <p role="status">Hämtar rapporter för granskning…</p>
+        }
+        else if (submissions.Count == 0 && error is null)
+        {
+            <p>Inga rapporter väntar på granskning.</p>
+        }
+        else
+        {
+            <p>Äldsta först · högst 200 rapporter åt gången</p>
+            <ul class="report-list">
+                @foreach (var submission in submissions)
+                {
+                    var report = submission.Report;
+                    <li>
+                        <article style="overflow-wrap: anywhere">
+                            <h2>@report.Title</h2>
+                            <p>@CategoryName(report.Category) · @report.CreatedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC</p>
+                            <p>@report.Description</p>
+                            @if (reportPhotoIds.Contains(report.Id))
+                            {
+                                <img class="report-photo" src="@($"/photos/reports/{report.Id}")" alt="Uppladdad bild att granska" loading="lazy" />
+                            }
+                            <p>Latitud: @report.Latitude.ToString("0.######", CultureInfo.InvariantCulture) · Longitud: @report.Longitude.ToString("0.######", CultureInfo.InvariantCulture)</p>
+                            @if (Mode.PublicWorkflow)
+                            {
+                                <button type="button" class="text-button" disabled="@busy" @onclick="() => Decide(report.Id, ReportReviewStatus.Approved)">Godkänn och publicera</button>
+                                <button type="button" class="text-button" disabled="@busy" @onclick="() => Decide(report.Id, ReportReviewStatus.Rejected)">Avvisa</button>
+                            }
+                        </article>
+                    </li>
+                }
+            </ul>
+        }
+        <button type="button" class="text-button" disabled="@busy" @onclick="Reload">Uppdatera kön</button>
+    }
+    <p><a href="/">Tillbaka till kartan</a></p>
+</main>
+
+@code {
+    private IReadOnlyList<ReportSubmission> submissions = [];
+    private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>();
+    private bool allowed, loading, busy;
+    private string? error, status;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        allowed = ReportCommands.CanModerate((await AuthenticationStateTask).User);
+        if (Mode.WorkflowEnabled && allowed)
+            await Reload();
+    }
+
+    private async Task Reload()
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            var user = (await AuthenticationStateTask).User;
+            submissions = await Commands.ListPendingAsync(user);
+            reportPhotoIds = await Photos.VisibleReportIdsAsync(
+                user, submissions.Select(submission => submission.Report.Id).ToArray());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            submissions = [];
+            reportPhotoIds = new HashSet<Guid>();
+            error = "Du har inte behörighet att visa granskningskön.";
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Granskningskön kunde inte hämtas.");
+            submissions = [];
+            reportPhotoIds = new HashSet<Guid>();
+            error = "Granskningskön kunde inte hämtas. Försök igen senare.";
+        }
+        finally { loading = false; }
+    }
+
+    private async Task Decide(Guid id, ReportReviewStatus decision)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var question = decision == ReportReviewStatus.Approved
+                ? "Godkänn och publicera rapporten?"
+                : "Avvisa rapporten? Den kommer inte att visas offentligt.";
+            if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+            var user = (await AuthenticationStateTask).User;
+            var changed = await Commands.DecideAsync(user, id, decision);
+            await Reload();
+            status = !changed ? "Rapporten har redan granskats eller finns inte längre. Kön har uppdaterats."
+                : decision == ReportReviewStatus.Approved ? "Rapporten är godkänd och publicerad."
+                : "Rapporten har avvisats och visas inte offentligt.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Du har inte behörighet att granska rapporter.";
+        }
+        catch (PhotoReviewException exception)
+        {
+            error = exception.Message;
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException or JSException)
+        {
+            Logger.LogError(exception, "Rapporten kunde inte granskas.");
+            error = "Rapporten kunde inte granskas. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private static string CategoryName(ReportCategory category) => category switch
+    {
+        ReportCategory.Litter => "Skräp", ReportCategory.Broken => "Trasigt", _ => "Annat"
+    };
+}

@@ -8,6 +8,11 @@ licens för projektet och ersätter inte respektive komponents licensvillkor.
 - Radzen.Blazor: MIT; se paketets licens på NuGet.
 - .NET, ASP.NET Core, EF Core, Aspire och OpenTelemetry: respektive paketlicenser.
 - Npgsql och Npgsql EF Core: PostgreSQL-licens enligt paketen.
+- SkiaSharp/Skia och Magick.NET/ImageMagick: se respektive pakets och
+  inbyggda native-komponenters licenser och medföljande meddelanden i
+  `third-party-notices/` i publicerad webbapp eller webbimage.
+- ClamAV ingår inte i webbimagen; en eventuell lokal skanner har egna licens-
+  och distributionsvillkor.
 - PostgreSQL/PostGIS och Debian-paket i databasimagen: respektive upstream-
   licenser, inklusive PostGIS GPL-villkor. Distribution av images kräver att
   tillämpliga licens- och källkodserbjudandekrav bedöms/följs.

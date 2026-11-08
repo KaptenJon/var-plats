@@ -18,7 +18,7 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261108035738_IdentityAccountActivity";
+    public override string LastMigrationId => "20261108164953_ReportPhotos";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -297,6 +297,56 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("IdentityAccountActivity");
             });
 
+        modelBuilder.Entity("VarPlats.Web.Data.ReportActionConfirmationEntity", b =>
+            {
+                b.Property<Guid>("ActionId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("AccountId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("ActionId", "AccountId");
+
+                b.HasIndex("AccountId");
+
+                b.ToTable("report_action_confirmations");
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportActionEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("AuthorId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Description")
+                    .IsRequired()
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<Guid>("ReportId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("Id");
+
+                b.HasIndex("AuthorId");
+
+                b.HasIndex("ReportId", "CreatedAt");
+
+                b.ToTable("report_actions", t =>
+                    {
+                        t.HasCheckConstraint("CK_report_actions_Description", "length(trim(\"Description\")) >= 10");
+                    });
+            });
+
         modelBuilder.Entity("VarPlats.Web.Data.ReportEntity", b =>
             {
                 b.Property<Guid>("Id")
@@ -333,6 +383,127 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                 NpgsqlIndexBuilderExtensions.HasMethod(index, "gist");
 
                 b.ToTable("reports");
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportPhotoEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("ActionId")
+                    .HasColumnType("uuid");
+
+                b.Property<long>("ByteLength")
+                    .HasColumnType("bigint");
+
+                b.Property<string>("ContentType")
+                    .IsRequired()
+                    .HasMaxLength(10)
+                    .HasColumnType("character varying(10)");
+
+                b.Property<int>("Height")
+                    .HasColumnType("integer");
+
+                b.Property<string>("Sha256")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<string>("StorageName")
+                    .IsRequired()
+                    .HasMaxLength(36)
+                    .HasColumnType("character varying(36)");
+
+                b.Property<Guid?>("SubmissionId")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("Width")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ActionId")
+                    .IsUnique();
+
+                b.HasIndex("StorageName")
+                    .IsUnique();
+
+                b.HasIndex("SubmissionId")
+                    .IsUnique();
+
+                b.ToTable("report_photos", t =>
+                    {
+                        t.HasCheckConstraint("CK_report_photos_ContentType", "(\"ContentType\" = 'image/jpeg' AND \"StorageName\" LIKE '%.jpg') OR (\"ContentType\" = 'image/png' AND \"StorageName\" LIKE '%.png')");
+
+                        t.HasCheckConstraint("CK_report_photos_Parent", "(\"SubmissionId\" IS NOT NULL AND \"ActionId\" IS NULL) OR (\"SubmissionId\" IS NULL AND \"ActionId\" IS NOT NULL)");
+
+                        t.HasCheckConstraint("CK_report_photos_Sha256", "\"Sha256\" ~ '^[0-9a-f]{64}$'");
+
+                        t.HasCheckConstraint("CK_report_photos_Size", "\"ByteLength\" BETWEEN 1 AND 5242880 AND \"Width\" BETWEEN 1 AND 4096 AND \"Height\" BETWEEN 1 AND 4096 AND \"Width\"::bigint * \"Height\" <= 16000000");
+
+                        t.HasCheckConstraint("CK_report_photos_StorageName", "\"StorageName\" ~ '^[0-9a-f]{32}\\.(jpg|png)$'");
+                    });
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportSubmissionEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("AuthorId")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("Category")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Description")
+                    .IsRequired()
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<Point>("Location")
+                    .IsRequired()
+                    .HasColumnType("geography (point, 4326)");
+
+                b.Property<Guid?>("PublishedReportId")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("ReviewStatus")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasDefaultValue(0);
+
+                b.Property<string>("Title")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("AuthorId");
+
+                b.HasIndex("PublishedReportId")
+                    .IsUnique();
+
+                b.HasIndex("ReviewStatus", "CreatedAt");
+
+                b.ToTable("report_submissions", t =>
+                    {
+                        t.HasCheckConstraint("CK_report_submissions_Category", "\"Category\" BETWEEN 0 AND 2");
+
+                        t.HasCheckConstraint("CK_report_submissions_Description", "length(trim(\"Description\")) >= 10");
+
+                        t.HasCheckConstraint("CK_report_submissions_Publication", "(\"ReviewStatus\" = 1 AND \"PublishedReportId\" IS NOT NULL AND \"PublishedReportId\" = \"Id\") OR (\"ReviewStatus\" IN (0, 2) AND \"PublishedReportId\" IS NULL)");
+
+                        t.HasCheckConstraint("CK_report_submissions_ReviewStatus", "\"ReviewStatus\" IN (0, 1, 2)");
+
+                        t.HasCheckConstraint("CK_report_submissions_Title", "length(trim(\"Title\")) >= 5");
+                    });
             });
 
         modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -402,6 +573,61 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                     .HasForeignKey("VarPlats.Web.Data.IdentityAccountActivity", "UserId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportActionConfirmationEntity", b =>
+            {
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithMany()
+                    .HasForeignKey("AccountId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("VarPlats.Web.Data.ReportActionEntity", null)
+                    .WithMany()
+                    .HasForeignKey("ActionId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportActionEntity", b =>
+            {
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithMany()
+                    .HasForeignKey("AuthorId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                b.HasOne("VarPlats.Web.Data.ReportEntity", null)
+                    .WithMany()
+                    .HasForeignKey("ReportId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportPhotoEntity", b =>
+            {
+                b.HasOne("VarPlats.Web.Data.ReportActionEntity", null)
+                    .WithOne()
+                    .HasForeignKey("VarPlats.Web.Data.ReportPhotoEntity", "ActionId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("VarPlats.Web.Data.ReportSubmissionEntity", null)
+                    .WithOne()
+                    .HasForeignKey("VarPlats.Web.Data.ReportPhotoEntity", "SubmissionId")
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportSubmissionEntity", b =>
+            {
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithMany()
+                    .HasForeignKey("AuthorId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                b.HasOne("VarPlats.Web.Data.ReportEntity", null)
+                    .WithOne()
+                    .HasForeignKey("VarPlats.Web.Data.ReportSubmissionEntity", "PublishedReportId")
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 #pragma warning restore 612, 618
     }
