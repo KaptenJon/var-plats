@@ -1,0 +1,53 @@
+@using VarPlats.Web.Photos
+
+<label for="@Id">Valfri bild</label>
+<InputFile id="@Id" @key="inputVersion" OnChange="Select"
+           accept="image/jpeg,image/png" disabled="@Disabled" aria-describedby="@($"{Id}-warning")" />
+<p id="@($"{Id}-warning")" class="photo-warning">
+    Välj högst en JPEG- eller PNG-bild, max 5 MiB. <strong>Bilden får inte innehålla människor,
+    ansikten eller personuppgifter.</strong> Bilden kan finnas kvar även om du tar bort kontot.
+    Metadatarensning tar inte bort synliga personer eller uppgifter.
+</p>
+@if (invalid)
+{
+    <p class="error" role="alert">Bilden kan inte väljas. Välj en mindre bild eller ta bort valet innan du skickar.</p>
+}
+else if (selected is not null)
+{
+    <p class="small" role="status">En bild är vald.</p>
+}
+@if (selected is not null || invalid)
+{
+    <button type="button" class="text-button" disabled="@Disabled" @onclick="Clear">Ta bort vald bild</button>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<PhotoSelection> SelectionChanged { get; set; }
+
+    private IBrowserFile? selected;
+    private bool invalid;
+    private int inputVersion;
+
+    private async Task Select(InputFileChangeEventArgs args)
+    {
+        selected = null;
+        invalid = args.FileCount != 1;
+        if (!invalid)
+        {
+            var file = args.File;
+            invalid = file.Size is <= 0 or > PhotoSanitizer.MaximumInputBytes;
+            if (!invalid) selected = file;
+        }
+        await SelectionChanged.InvokeAsync(new(selected, invalid));
+    }
+
+    private async Task Clear()
+    {
+        selected = null;
+        invalid = false;
+        inputVersion++;
+        await SelectionChanged.InvokeAsync(new(null, false));
+    }
+}

@@ -96,6 +96,39 @@ Webb kör som icke-root, med read-only rotfilsystem, tmpfs, borttagna capabiliti
 och beständig Data Protection-volym. Kryptering av volym/backup och nycklar är
 driftansvar. Kontrollera volymrättigheter innan första riktiga uppstart.
 
+### Framtida bildlagring – inte aktiverad i Pi-releasen
+
+Bildkoden är opt-in och aktiverar inte bildtjänster i Compose eller release och
+ändrar inga grants eller resurser på Pi. Standard
+`Photos:Enabled=false` kräver ingen bildtabell, bildvolym eller skanner. Skapa
+inte dessa resurser och tillämpa inte `20261108164953_ReportPhotos` i den
+nuvarande förhandsversionen. Aktivering kräver separat ägarbeslut, granskade
+begränsade databasbehörigheter, backup och ett testat migrations-/återställnings-
+förfarande utöver alla skriv- och lanseringsgrindar i SECURITY.md.
+
+För ett framtida isolerat driftprov krävs 64-bitars Linux med `procfs`, en
+dedikerad lokal lagringskatalog **utanför webroot**, ägd av webbprocessens UID
+och med rättighet `0700`. Inga katalogkomponenter får vara symlänkar eller
+skrivbara för grupp/andra; lagringen får inte delas med andra appar eller vara
+åtkomlig via en annan webroot-montering. Konfigurera absoluta
+`Photos:StoragePath` och `Photos:ScannerSocketPath`. Socketens separata katalog
+ska också ägas av webbprocessens UID och ha `0700`; clamd-socketen ska ägas av
+samma UID och vara privat. Skannern är endast lokal och måste svara på
+`zINSTREAM` med aktuella signaturer och tillåta minst 5 MiB per skanning.
+Saknad socket, timeout och alla andra fel stoppar uppladdningen.
+
+Standardgränserna är 1 000 filer, 512 MiB bilddata, minst 512 MiB ledigt
+utrymme, en samtidig uppladdning per webbprocess och 30 sekunders inläsningstid;
+de kan begränsas i `Photos`.
+Använd dessutom en separat, hårt kvotbegränsad filvolym: appens kontroll av
+ledigt utrymme kan inte skydda andra processer mot samtidiga diskskrivningar.
+Flera webbprocesser delar databaslås för lagringskvoten men har varsin
+minnes-/skanningsgräns och måste kapacitetsprovas. Bevaka fel och rester efter
+avbruten filstädning, och testa återställning av databas och bildvolym
+tillsammans. `no-store` begränsar cache, men redan mottagna kopior kan inte
+återkallas. Testa verklig clamd, filsystem, inbyggda bildavkodare och resursbruk
+på den avsedda ARM64-miljön före någon aktivering.
+
 ## GitHub-deployment till en separat Pi-installation
 
 Release-workflow bygger fortfarande på GitHub-hostad ARM64-runner. Jobbet

@@ -3,7 +3,8 @@ const markers = new Map();
 
 export function initialize(id, options, dotnet) {
   callback = dotnet;
-  map = L.map(id).setView([59.3293, 18.0686], 14);
+  map = L.map(id, { zoomControl: false }).setView([59.3293, 18.0686], 14);
+  L.control.zoom({ zoomInTitle: "Zooma in", zoomOutTitle: "Zooma ut" }).addTo(map);
   const attribution = document.createElement("span");
   attribution.textContent = options.attribution;
   const tiles = L.tileLayer(options.tileUrl, {
@@ -38,6 +39,7 @@ export function setReports(reports) {
       title: report.title,
       alt: report.title
     }).addTo(layer);
+    marker.getElement()?.setAttribute("aria-label", report.title);
     const content = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = report.title;
@@ -45,6 +47,12 @@ export function setReports(reports) {
     description.textContent = report.description;
     content.append(title, description);
     marker.bindPopup(content);
+    marker.on("popupopen", event => {
+      event.popup.getElement()?.querySelector(".leaflet-popup-close-button")
+        ?.setAttribute("aria-label", "Stäng informationsrutan");
+    });
+    marker.on("click", () => callback.invokeMethodAsync("SelectReportFromMap", report.id)
+      .catch(error => console.error("Kartmarkeringen kunde inte väljas i rapportlistan.", error)));
     markers.set(report.id, marker);
   }
 }
@@ -54,7 +62,12 @@ export function setPicking(value) {
 }
 export function focusReport(id, latitude, longitude) {
   map.setView([latitude, longitude], 16, { animate: false });
-  markers.get(id)?.openPopup();
+  const marker = markers.get(id);
+  marker?.openPopup();
+  if (window.matchMedia("(max-width: 850px)").matches) {
+    map.getContainer().scrollIntoView({ block: "center", behavior: "auto" });
+    marker?.getElement()?.focus({ preventScroll: true });
+  }
 }
 export function dispose() {
   map?.remove();

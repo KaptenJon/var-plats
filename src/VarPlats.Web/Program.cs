@@ -19,12 +19,14 @@ using VarPlats.ServiceDefaults;
 using VarPlats.Web;
 using VarPlats.Web.Components;
 using VarPlats.Web.Data;
+using VarPlats.Web.Photos;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 var demo = builder.Configuration.GetValue<bool>("Reporting:Demo");
 var localWrites = builder.Configuration.GetValue<bool>("Reporting:LocalWrites");
 var publicWrites = builder.Configuration.GetValue<bool>("Reporting:PublicWrites");
+var workflowEnabled = builder.Configuration.GetValue<bool>("Reporting:WorkflowEnabled");
 var authenticationEnabled = builder.Configuration.GetValue<bool>("Authentication:Enabled");
 if ((demo || localWrites) && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Demo och lokala skrivningar är endast tillåtna i Development.");
@@ -32,8 +34,19 @@ if (publicWrites && (demo || localWrites))
     throw new InvalidOperationException("Publika skrivningar kan inte kombineras med demo eller lokala skrivningar.");
 if (publicWrites && !authenticationEnabled)
     throw new InvalidOperationException("Reporting:PublicWrites kräver Authentication:Enabled.");
+if (publicWrites && !workflowEnabled)
+    throw new InvalidOperationException("Reporting:PublicWrites kräver uttryckligt Reporting:WorkflowEnabled.");
+if (workflowEnabled && !authenticationEnabled)
+    throw new InvalidOperationException("Reporting:WorkflowEnabled kräver Authentication:Enabled.");
+if (workflowEnabled && (demo || localWrites))
+    throw new InvalidOperationException("Rapportgranskning kan inte kombineras med demo eller lokala skrivningar.");
 if (authenticationEnabled && demo)
     throw new InvalidOperationException("Autentisering kräver databasläge och kan inte användas med Reporting:Demo.");
+
+var reportingMode = new ReportingMode(demo, localWrites, publicWrites, workflowEnabled);
+var photoOptions = builder.Configuration.GetSection("Photos").Get<PhotoOptions>() ?? new PhotoOptions();
+photoOptions.Validate(reportingMode, authenticationEnabled,
+    builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot"));
 
 var adminGitHubId = builder.Configuration["Authentication:AdminGitHubId"];
 var trustedProxyValue = builder.Configuration["Authentication:TrustedProxyIp"];
@@ -77,8 +90,26 @@ if (authenticationEnabled)
             "Authentication:PublicBaseUrl and Passkeys settings must use HTTPS and an exact allowed origin.");
 }
 
-builder.Services.AddSingleton(new ReportingMode(demo, localWrites, publicWrites));
+builder.Services.AddSingleton(reportingMode);
+builder.Services.AddSingleton(photoOptions);
 builder.Services.AddScoped<ReportCommands>();
+builder.Services.AddScoped<ReportActionCommands>();
+builder.Services.AddScoped<PhotoUploadCommands>();
+if (photoOptions.Enabled)
+{
+    builder.Services.AddSingleton<IPhotoFileStorage, LinuxPhotoStorage>();
+    builder.Services.AddSingleton<IPhotoMalwareScanner, ClamAvUnixScanner>();
+    builder.Services.AddSingleton<PhotoProcessor>();
+    builder.Services.AddScoped<DatabasePhotoWriter>();
+    builder.Services.AddScoped<IPhotoWriter>(services => services.GetRequiredService<DatabasePhotoWriter>());
+    builder.Services.AddScoped<IPhotoCleanup>(services => services.GetRequiredService<DatabasePhotoWriter>());
+    builder.Services.AddScoped<IPhotoReader, DatabasePhotoReader>();
+}
+else
+{
+    builder.Services.AddSingleton<IPhotoReader, DisabledPhotoReader>();
+    builder.Services.AddSingleton<IPhotoCleanup, DisabledPhotoCleanup>();
+}
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
@@ -140,6 +171,7 @@ if (authenticationEnabled)
     .AddEntityFrameworkStores<ReportDbContext>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
+    builder.Services.AddScoped<IReportAccountAccess, IdentityReportAccountAccess>();
     builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
         options.TokenLifespan = TimeSpan.FromHours(1));
     builder.Services.Configure<IdentityPasskeyOptions>(options =>
@@ -308,6 +340,8 @@ else
     builder.Services.AddDbContextFactory<ReportDbContext>(options =>
         options.UseNpgsql(connection, postgres => postgres.UseNetTopologySuite()));
     builder.Services.AddScoped<IReportStore, DatabaseReportStore>();
+    builder.Services.AddScoped<IReportWorkflowStore, DatabaseReportWorkflowStore>();
+    builder.Services.AddScoped<IReportActionStore, DatabaseReportActionStore>();
     builder.Services.AddHealthChecks().AddDbContextCheck<ReportDbContext>();
 }
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -315,6 +349,8 @@ builder.Services.AddRadzenComponents();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<PublicExceptionHandler>();
 var app = builder.Build();
+if (photoOptions.Enabled)
+    _ = app.Services.GetRequiredService<IPhotoFileStorage>();
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
 if (!app.Environment.IsDevelopment())
@@ -331,6 +367,14 @@ app.Use(async (context, next) =>
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     context.Response.Headers["X-Frame-Options"] = "DENY";
     context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    if (photoOptions.Enabled
+        && (context.Request.Path.StartsWithSegments("/mina-rapporter")
+            || context.Request.Path.StartsWithSegments("/moderering")
+            || context.Request.Path.StartsWithSegments("/rapporter")))
+    {
+        context.Response.Headers.CacheControl = "private, no-store, max-age=0";
+        context.Response.Headers.Pragma = "no-cache";
+    }
     await next();
 });
 app.UseAuthentication();
@@ -341,6 +385,8 @@ app.MapStaticAssets();
 app.MapDefaultEndpoints();
 app.MapGet("/api/reports", async (IReportStore store, CancellationToken cancellationToken) =>
     Results.Ok(await store.ListAsync(cancellationToken)));
+if (photoOptions.Enabled)
+    app.MapPhotoEndpoints();
 if (authenticationEnabled)
 {
     app.MapPost("/auth/signin/google", async (

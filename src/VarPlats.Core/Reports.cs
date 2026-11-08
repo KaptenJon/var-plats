@@ -4,11 +4,14 @@ namespace VarPlats.Core;
 
 public enum ReportCategory { Litter, Broken, Other }
 public enum ReportStatus { Reported, ActionDocumented, Confirmed }
+public enum ReportReviewStatus { Pending, Approved, Rejected }
 
 public sealed record Report(
     Guid Id, string Title, string Description, ReportCategory Category,
     double Latitude, double Longitude, DateTimeOffset CreatedAt,
     ReportStatus Status = ReportStatus.Reported);
+
+public sealed record ReportSubmission(Report Report, ReportReviewStatus ReviewStatus);
 
 public sealed class ReportDraft : IValidatableObject
 {
@@ -50,8 +53,17 @@ public sealed class ReportDraft : IValidatableObject
 public interface IReportStore
 {
     Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default);
+    Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Report> AddAsync(ReportDraft draft, CancellationToken cancellationToken = default);
     Task<bool> RemoveAsync(Guid id, CancellationToken cancellationToken = default);
+}
+
+public interface IReportWorkflowStore
+{
+    Task<Report> SubmitAsync(Guid authorId, ReportDraft draft, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ReportSubmission>> ListOwnAsync(Guid authorId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ReportSubmission>> ListPendingAsync(CancellationToken cancellationToken = default);
+    Task<bool> DecideAsync(Guid id, ReportReviewStatus decision, CancellationToken cancellationToken = default);
 }
 
 public sealed class DemoReportStore : IReportStore
@@ -68,6 +80,9 @@ public sealed class DemoReportStore : IReportStore
 
     public Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<Report>>(reports.ToArray());
+
+    public Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default)
+        => Task.FromResult(reports.FirstOrDefault(report => report.Id == id));
 
     public Task<Report> AddAsync(ReportDraft draft, CancellationToken cancellationToken = default)
     {

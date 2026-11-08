@@ -1,0 +1,324 @@
+@page "/rapporter/{ReportId:guid}"
+@rendermode InteractiveServer
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Authorization
+@using VarPlats.Web.Photos
+@inject IReportStore Store
+@inject ReportActionCommands Actions
+@inject ReportingMode Mode
+@inject PhotoOptions PhotoSettings
+@inject PhotoUploadCommands PhotoUploads
+@inject IPhotoReader Photos
+@inject IJSRuntime JS
+@inject ILogger<ReportDetails> Logger
+
+<PageTitle>Rapport – Vår plats</PageTitle>
+<main class="document">
+    <p><a href="/">Tillbaka till kartan och rapportlistan</a></p>
+    @if (error is not null)
+    {
+        <p class="error" role="alert">@error</p>
+    }
+    @if (status is not null)
+    {
+        <p role="status">@status</p>
+    }
+    @if (loading)
+    {
+        <h1>Rapport</h1>
+        <p role="status">Hämtar rapporten…</p>
+    }
+    else if (report is null)
+    {
+        <h1>Rapporten finns inte</h1>
+        @if (error is null)
+        {
+            <p>Rapporten finns inte eller är inte publicerad.</p>
+        }
+    }
+    else
+    {
+        <h1>@report.Title</h1>
+        <p>@CategoryName(report.Category) · @FormatTime(report.CreatedAt) UTC</p>
+        <p><strong>Status:</strong> @ReportStatusText.Describe(report.Status, Mode.WorkflowEnabled)</p>
+        <p class="action-description">@report.Description</p>
+        @if (reportPhotoIds.Contains(report.Id))
+        {
+            <img class="report-photo" src="@($"/photos/reports/{report.Id}")" alt="Uppladdad bild till rapporten" />
+        }
+        <p>Latitud: @report.Latitude.ToString("0.######", CultureInfo.InvariantCulture) · Longitud: @report.Longitude.ToString("0.######", CultureInfo.InvariantCulture)</p>
+        <p class="small">Vår plats är inte en officiell kommunal felanmälan. Kontakta ansvarig aktör när det behövs.</p>
+
+        <section aria-labelledby="actions-heading">
+            <h2 id="actions-heading">Uppgivna åtgärder</h2>
+            <p>Det här är uppgifter från konton, inte en kontroll av platsen. En bekräftelse betyder att ett annat konto instämmer; vi har inte verifierat en fysisk person eller arbetets säkerhet.</p>
+            <p>Bekräfta bara uppgifter du själv kan stå för. Utsätt dig inte för fara för att kontrollera en plats.</p>
+            @if (Mode.WorkflowEnabled)
+            {
+                <button type="button" class="text-button" disabled="@busy" @onclick="Refresh">Uppdatera åtgärder och status</button>
+            }
+            @if (!Mode.WorkflowEnabled)
+            {
+                <p>Åtgärdsuppgifter är dolda när funktionen är avstängd.</p>
+            }
+            else if (actionItems.Count == 0)
+            {
+                <p>Ingen åtgärd har uppgetts för rapporten ännu.</p>
+            }
+            else
+            {
+                <p class="small">Senaste 200 åtgärdsuppgifterna visas. Rapportens status grundas på alla aktuella uppgifter.</p>
+                <ul class="report-list action-list">
+                    @foreach (var action in actionItems)
+                    {
+                        <li>
+                            <article>
+                                <p><strong>@ConfirmationText(action.ConfirmationCount)</strong> · @FormatTime(action.CreatedAt) UTC</p>
+                                <p class="action-description">@action.Description</p>
+                                @if (actionPhotoIds.Contains(action.Id))
+                                {
+                                    <img class="report-photo" src="@($"/photos/actions/{action.Id}")" alt="Uppladdad bild till åtgärdsuppgiften" loading="lazy" />
+                                }
+                                @if (action.IsOwnAction)
+                                {
+                                    <p class="small">Ditt konto kan inte bekräfta en egen uppgift.</p>
+                                }
+                                else if (action.HasConfirmed)
+                                {
+                                    <p class="small">Ditt konto har redan bekräftat uppgiften.</p>
+                                }
+                                else if (canWrite)
+                                {
+                                    <button type="button" class="text-button" disabled="@busy" @onclick="() => Confirm(action.Id)">Bekräfta uppgiften</button>
+                                }
+                                @if (canRemove)
+                                {
+                                    <button type="button" class="text-button" disabled="@busy" @onclick="() => Remove(action.Id)">Ta bort åtgärdsuppgiften</button>
+                                }
+                            </article>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        @if (canWrite)
+        {
+            <section aria-labelledby="document-action-heading">
+                <h2 id="document-action-heading">Uppge en åtgärd</h2>
+                <p>Beskriv något som gjorts, till exempel städats eller åtgärdats. När du väljer att publicera visas texten direkt och utan förhandsgranskning. Den är obekräftad tills ett annat konto bekräftar den.</p>
+                <p>Utsätt inte dig själv eller andra för fara. Rör inte elinstallationer, trafikmiljö, kemikalier, sprutor eller okänt avfall. Kontakta ansvarig aktör; ring 112 vid akut fara.</p>
+                <p>Skriv inga namn, adresser, registreringsnummer eller andra personuppgifter. Texten kan finnas kvar även om du tar bort kontot.</p>
+                <EditForm Model="draft" OnValidSubmit="Save" FormName="report-action">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+                    <label for="action-description">Vad har gjorts?</label>
+                    <InputTextArea id="action-description" @bind-Value="draft.Description" maxlength="1000" rows="5" />
+                    <p class="small">10–1000 tecken. Bekräftelse från ett annat konto är ingen garanti för säkerhet.</p>
+                    @if (PhotoSettings.Enabled)
+                    {
+                        <p>En vald bild visas direkt tillsammans med åtgärdsuppgiften.</p>
+                        <PhotoUploadField @key="photoFieldVersion" Id="action-photo" Disabled="busy" SelectionChanged="SetPhoto" />
+                    }
+                    <RadzenButton ButtonType="ButtonType.Submit" Text="@(busy ? "Sparar…" : "Publicera åtgärdsuppgift")" Disabled="@busy" />
+                </EditForm>
+            </section>
+        }
+        else if (Mode.PublicWorkflow)
+        {
+            <p>Logga in med ett behörigt medlems- eller administratörskonto för att uppge eller bekräfta en åtgärd. Återställningsläget kan inte skriva.</p>
+        }
+        else if (Mode.WorkflowEnabled)
+        {
+            <p>Det går inte att uppge eller bekräfta åtgärder när skrivningar är avstängda.</p>
+        }
+    }
+</main>
+
+@code {
+    [Parameter] public Guid ReportId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
+
+    private Report? report;
+    private IReadOnlyList<ReportAction> actionItems = [];
+    private ReportActionDraft draft = new();
+    private PhotoSelection photoSelection = new(null, false);
+    private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>(), actionPhotoIds = new HashSet<Guid>();
+    private Guid? loadedReportId;
+    private int photoFieldVersion;
+    private bool canWrite, canRemove, loading = true, busy;
+    private string? error, status;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedReportId != ReportId)
+        {
+            loadedReportId = ReportId;
+            draft = new();
+            photoSelection = new(null, false);
+            photoFieldVersion++;
+        }
+        var user = (await AuthenticationStateTask).User;
+        canWrite = Mode.PublicWorkflow && ReportCommands.CanReport(user);
+        canRemove = Mode.PublicWorkflow && ReportCommands.CanModerate(user);
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            report = await Store.GetAsync(ReportId);
+            actionItems = report is null
+                ? []
+                : await Actions.ListAsync((await AuthenticationStateTask).User, ReportId);
+            var viewer = (await AuthenticationStateTask).User;
+            reportPhotoIds = report is null ? new HashSet<Guid>()
+                : await Photos.VisibleReportIdsAsync(viewer, [report.Id]);
+            actionPhotoIds = await Photos.VisibleActionIdsAsync(actionItems.Select(action => action.Id).ToArray());
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Rapporten eller åtgärdsuppgifterna kunde inte hämtas.");
+            report = null;
+            actionItems = [];
+            reportPhotoIds = new HashSet<Guid>();
+            actionPhotoIds = new HashSet<Guid>();
+            error = "Rapporten kunde inte hämtas. Försök igen senare.";
+        }
+        finally { loading = false; }
+    }
+
+    private async Task Refresh()
+    {
+        if (busy) return;
+        busy = true;
+        status = null;
+        try { await Reload(); }
+        finally { busy = false; }
+    }
+
+    private async Task Save()
+    {
+        if (busy) return;
+        if (photoSelection.Invalid)
+        {
+            error = "Välj en giltig bild eller ta bort bildvalet innan du publicerar åtgärdsuppgiften.";
+            return;
+        }
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var user = (await AuthenticationStateTask).User;
+            bool added;
+            if (photoSelection.File is { } file)
+            {
+                await using var input = file.OpenReadStream(PhotoSanitizer.MaximumInputBytes);
+                added = await PhotoUploads.SubmitActionAsync(user, ReportId, draft, input);
+            }
+            else
+                added = await Actions.AddAsync(user, ReportId, draft);
+            if (added)
+            {
+                draft = new();
+                photoSelection = new(null, false);
+                photoFieldVersion++;
+            }
+            await Reload();
+            status = added ? "Åtgärdsuppgiften är publicerad."
+                : "Rapporten finns inte längre eller är inte publicerad.";
+        }
+        catch (ValidationException exception) { error = exception.Message; }
+        catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att uppge en åtgärd."; }
+        catch (PhotoUploadException exception) { error = exception.Message; }
+        catch (PhotoSanitizationException exception)
+        {
+            error = $"{exception.Message} Ingen text eller bild sparades.";
+        }
+        catch (IOException exception)
+        {
+            Logger.LogWarning(exception, "Åtgärdsbilden kunde inte hanteras.");
+            error = "Bilden kunde inte hanteras. Kontrollera åtgärdslistan innan du försöker igen.";
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Åtgärdsuppgiften kunde inte sparas.");
+            error = "Åtgärdsuppgiften kunde inte sparas. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Confirm(Guid actionId)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var user = (await AuthenticationStateTask).User;
+            var result = await Actions.ConfirmAsync(user, ReportId, actionId);
+            await Reload();
+            status = result switch
+            {
+                ActionConfirmationResult.Confirmed => "Ditt konto har bekräftat uppgiften.",
+                ActionConfirmationResult.AlreadyConfirmed => "Ditt konto har redan bekräftat uppgiften.",
+                ActionConfirmationResult.OwnAction => "Ditt konto kan inte bekräfta en egen uppgift.",
+                _ => "Åtgärdsuppgiften finns inte längre."
+            };
+        }
+        catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att bekräfta."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Åtgärdsuppgiften kunde inte bekräftas.");
+            error = "Bekräftelsen kunde inte sparas. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Remove(Guid actionId)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("confirm", "Ta bort åtgärdsuppgiften och dess bekräftelser permanent?"))
+                return;
+            var user = (await AuthenticationStateTask).User;
+            var removed = await Actions.RemoveAsync(user, ReportId, actionId);
+            await Reload();
+            status = removed ? "Åtgärdsuppgiften och dess bekräftelser har tagits bort."
+                : "Åtgärdsuppgiften finns inte längre.";
+        }
+        catch (UnauthorizedAccessException) { error = "Endast administratörer kan ta bort åtgärdsuppgifter."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException or JSException)
+        {
+            Logger.LogError(exception, "Åtgärdsuppgiften kunde inte tas bort.");
+            error = "Åtgärdsuppgiften kunde inte tas bort. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private static string ConfirmationText(int count) => count switch
+    {
+        0 => "Uppgiven åtgärd · obekräftad",
+        1 => "Bekräftad av ett annat konto",
+        _ => $"Bekräftad av {count} andra konton"
+    };
+
+    private void SetPhoto(PhotoSelection selection) => photoSelection = selection;
+
+    private static string FormatTime(DateTimeOffset time)
+        => time.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+    private static string CategoryName(ReportCategory category) => category switch
+    {
+        ReportCategory.Litter => "Skräp", ReportCategory.Broken => "Trasigt", _ => "Annat"
+    };
+}
