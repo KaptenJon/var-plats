@@ -21,3 +21,21 @@ licens för projektet och ersätter inte respektive komponents licensvillkor.
 
 Inventera transitiva paket och containerinnehåll före extern distribution;
 SBOM i release hjälper inventeringen men är inte en juridisk licensgranskning.
+
+## Återstående distributionsgranskning
+
+De befintliga webb- och databasimagernas GHCR-taggar var publikt nedladdningsbara
+vid kontroll 2026-11-08. Publicera inte nya images innan tillämpliga licens- och
+källkodsvillkor har inventerats och uppfyllts.
+
+- Bildpaketens egna meddelanden medföljer webbimagen, men en kontroll av
+  `dotnet publish` visade att bland annat Radzens och NetTopologySuites
+  fullständiga licensmeddelanden inte automatiskt följer med. Inventera och
+  inkludera nödvändiga meddelanden även för övriga runtime-beroenden.
+- Magick.NET:s och SkiaSharps meddelanden listar även LGPL-komponenter. Fastställ
+  vilka som faktiskt ingår i Linux/ARM64-bygget och uppfyll eventuella krav på
+  motsvarande källkod och möjlighet att återlänka.
+- Databasimagen innehåller PostGIS och Debian-paket med copyleft-villkor.
+  Kartlägg även webb- och databasimagernas operativsystemspaket och ordna
+  tillgång till exakt motsvarande källkod där det krävs. En SBOM eller enbart
+  en länk till en upstream-version är inte i sig ett verifierat källkodserbjudande.
