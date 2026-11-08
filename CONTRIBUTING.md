@@ -1,9 +1,8 @@
 # Bidra till Vår plats
 
-Tack! Läs README, SECURITY och uppförandekoden. **Kodlicens är inte vald.**
-Skicka inte in extern kod utan klar rättighet. Innan externa kodbidrag accepteras
-behöver ägaren besluta licens och bidragsvillkor; detta dokument ger ingen extra
-licensrätt och repositoryt kallas inte open source.
+Tack! Läs README, SECURITY och uppförandekoden. Projektets egen kod omfattas av
+MIT-licensen i `LICENSE`; tredjepartskomponenter har separata villkor.
+Skicka inte in extern kod utan klar rättighet och kompatibla licensvillkor.
 
 ## Utveckling
 

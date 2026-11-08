@@ -14,4 +14,4 @@
 - [ ] OSM-attribution, referer och ingen prefetch/offline-cache bevaras
 - [ ] Dokumentation och direkt berörda tester uppdaterade
 - [ ] Inga hemligheter eller verkliga personuppgifter ingår
-- [ ] Tredjepartskod/licenser kontrollerade; projektlicens är fortfarande ett öppet beslut
+- [ ] Tredjepartskod/licenser kontrollerade; projektets MIT-licens i `LICENSE` bevaras

@@ -504,6 +504,9 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "thirdpartynoticegenerator": {
+        "type": "Project"
+      },
       "varplats.core": {
         "type": "Project"
       },

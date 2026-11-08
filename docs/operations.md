@@ -131,22 +131,27 @@ på den avsedda ARM64-miljön före någon aktivering.
 
 ## GitHub-deployment till en separat Pi-installation
 
-Release-workflow bygger fortfarande på GitHub-hostad ARM64-runner. Jobbet
-`deploy-pi` kör endast för versionstaggar som verifierats tillhöra `main`,
-använder environment `pi-preview` och runner-label `varplats-deploy`. Skapa
-environment med ägaren som obligatorisk granskare och tillåt endast versionstaggar
-innan runnern registreras. Kör aldrig CI, fork-PR eller checkout av PR-kod på Pi:n.
+Webbimagen byggs på en GitHub-hostad ARM64-runner i det privata repositoryt
+`KaptenJon/var-plats-deploy`, efter godkänd CI för den aktuella `main`-revisionen.
+Databasimagen byggs inte om för denna release. Jobbet `deploy-pi` kör endast för
+annoterade versionstaggar som verifierats tillhöra `main`, använder environment
+`pi-preview` och runner-label `varplats-deploy`. Skapa environment med ägaren
+som obligatorisk granskare och tillåt endast versionstaggar innan runnern
+registreras. Kör aldrig CI, fork-PR eller checkout av PR-kod på Pi:n.
 En self-hosted runner i ett publikt repo är trots detta en risk: workflowkod kan
 ändras, och Docker-medlemskap ger i praktiken administratörsåtkomst till värden.
 Ägaren måste godkänna risken; använd en separat deploymentvärd för stark isolering.
 
-Releasejobbet läser `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+Releasejobbet läser `GHCR_PULL_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
 `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`, `MAILJET_API_KEY`,
 `MAILJET_API_SECRET` och `MAILJET_SENDER_EMAIL` som secrets från environment
 `pi-preview`. GitHub-namnen för GitHub OAuth mappas till Compose-inställningarna
-`GITHUB_CLIENT_ID` och `GITHUB_CLIENT_SECRET`. De skickas till webbcontainern vid
-varje godkänd deploy och skrivs inte till Git eller deployens `.env`; Docker-
-administratörer på Pi:n kan dock läsa containerns miljö. Begränsa därför runner-
+`GITHUB_CLIENT_ID` och `GITHUB_CLIENT_SECRET`. Autentiseringsvärdena skickas till
+webbcontainern vid varje godkänd deploy och skrivs inte till Git eller deployens `.env`; Docker-
+administratörer på Pi:n kan dock läsa containerns miljö. `GHCR_PULL_TOKEN` är en
+separat klassisk GitHub-token med `read:packages` för att hämta den privata
+webbimagen; den skickas inte till webbcontainern. Den kan läsa privata paket som
+kontot har tillgång till och måste roteras före utgång. Begränsa därför runner-
 och värdåtkomst. Den godkända release-workflowen aktiverar autentisering men
 håller `REPORTING_PUBLIC_WRITES` till `false`. Den läser Caddys exakta IPv4-gateway
 från det befintliga Vår plats-webbcontainerns nätverk; den gissar inte proxy-IP.
@@ -173,13 +178,17 @@ användare, exempelvis `444` innanför den skyddade katalogen. `.env` ska använ
 SQL-initkatalogen måste vara läsbar i containern (`755`, SQL-filer `644`), även
 om kopiering/extrahering skett med restriktiv umask. Installationsroten förblir
 `700`, så andra värdanvändare får inte åtkomst genom dessa filrättigheter.
-Det första godkända deploymentjobbet initierar databasen och SELECT-only-rollen
-samt sätter ägarskap på endast projektets Data Protection-volym.
+En ny installation kräver separat granskad provisionering. Den aktuella
+release-workflowen kräver en befintlig databas och webbcontainer.
 
-Images hämtas med workflowets exakta SHA-256-digests. GHCR-token används enbart i
-en tillfällig Docker-konfiguration, inte i användarens befintliga registry-login.
-`pi.override.yml` begränsar CPU, RAM, processantal och loggstorlek för den nya
-appen. Senare deployment ändrar **endast webbcontainern**; databasen förblir
+Taggens annotationsrad ska vara den privata webbavbildningens exakta GHCR-referens med
+SHA-256-digest. Före ändringar på Pi:n hämtas imagen och dess
+`org.opencontainers.image.revision` jämförs med den verifierade källrevisionen;
+etiketten är inte en kryptografisk attestering. GHCR-token används enbart i en
+tillfällig Docker-konfiguration, inte i användarens befintliga registry-login.
+`pi.override.yml` anger gränser för CPU, RAM, processantal och loggstorlek;
+minnesgränsen kräver stöd i kärnan. Senare deployment ändrar **endast
+webbcontainern**; databasen förblir
 pinnad. Den godkända autentiseringsreleasen kör den idempotenta
 `deploy/identity-schema.sql` och den begränsade `deploy/pi-identity-role.sql`
 som `varplats`-ägaren innan webbcontainern uppdateras. Detta påverkar bara
@@ -188,10 +197,24 @@ data eller rapportbehörigheter. Övriga schema- och databasimageändringar krä
 separat granskning och backup. Misslyckad readiness eller auth-smoketest rullar
 tillbaka webbimagen utan att stoppa databasen eller andra appar. När autentisering
 är aktiverad kontrolleras att inloggningsalternativen visas och att en auth-route
-är mappad.
+är mappad. Den tidigare webbimagen måste finnas lokalt före en uppdatering.
+De gamla publika digestarna har tagits bort från GHCR och kan inte användas för
+återställning om de lokala kopiorna försvinner; ingen verifierad backup finns.
 
-Verifiera `docker info` för stöd för minnes-cgroups: vissa Pi-kärnor ignorerar
-`mem_limit`. Pi-override begränsar även .NET:s GC-heap till 256 MiB och sänker
+För en ny förhandsrelease: kontrollera att CI för aktuell `main` har lyckats,
+starta `Build private ARM64 image` i det privata repositoryt med hela
+`main`-commitens SHA och kontrollera att bygget lyckats och GHCR-paketet är
+privat. Kopiera digesten från byggjobbets sammanfattning och skapa en annoterad
+versionstagg på samma commit, med exakt
+`ghcr.io/kaptenjon/var-plats-deploy-web@sha256:<digest>` som taggmeddelande.
+Pusha taggen och godkänn därefter `pi-preview` först när releasekontrollerna
+har lyckats. Bygget använder privata GitHub Actions-minuter. Licens- och
+källkodsgranskningen är fortfarande öppen; denna förhandsrelease gör inte
+bilderna klara för offentlig distribution.
+
+Verifiera `docker info` för stöd för minnes-cgroups: denna Pi rapporterade
+`MemoryLimit=false` 2026-11-08 och ignorerar därmed `mem_limit`. Pi-override
+begränsar även .NET:s GC-heap till 256 MiB och sänker
 PostgreSQL:s anslutnings-/minnesinställningar, men detta är inte en hård gräns
 för processernas totala RAM. Att aktivera saknade kernel-cgroups kan kräva
 bootkonfiguration och omstart; gör inte detta utan en separat underhållsplan

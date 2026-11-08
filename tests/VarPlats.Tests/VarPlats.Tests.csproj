@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\VarPlats.Web\VarPlats.Web.csproj" />
+    <ProjectReference Include="..\..\tools\ThirdPartyNoticeGenerator\ThirdPartyNoticeGenerator.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />

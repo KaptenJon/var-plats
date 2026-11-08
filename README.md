@@ -1,8 +1,8 @@
 # Vår plats
 
 En mobilanpassad, kartcentrerad grund för gemensam omsorg om offentliga miljöer.
-**Prototyp – inte lanseringsklar.** Publikt repository betyder inte att koden har
-en open source-licens; kodlicens är ett öppet beslut.
+**Prototyp – inte lanseringsklar.** Projektets egen kod omfattas av MIT-licensen
+i `LICENSE`; tredjepartskomponenter har separata villkor.
 
 ## Prova lokalt
 
@@ -129,6 +129,7 @@ leverantörens villkor, integritet och attribution innan byte.
 
 ## Öppna beslut
 
-Kodlicens, extern juridisk granskning, logg- och backuprotation på värden,
-Pi-modell/RAM/64-bitars OS, modereringsansvar, säker drift av bildhantering, poängregler och
-tile-kapacitet. Ingen betaltjänst har aktiverats.
+Licens- och källkodsinventering för containerdistribution, logg- och
+backuprotation på värden, Pi-modell/RAM/64-bitars OS, modereringsansvar, säker
+drift av bildhantering, poängregler och tile-kapacitet. Ingen betaltjänst har
+aktiverats.

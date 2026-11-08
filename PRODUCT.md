@@ -40,7 +40,8 @@ beställarens godkännande. Inga påståenden om kunder, användarantal eller ef
 ## Evidence on Hand
 
 Inga verkliga rapporter eller bilder finns. Allt exempelmaterial ska märkas demo.
-Kodlicens, personuppgiftsansvarig och juridiska villkor är öppna beslut.
+Projektets egen kod omfattas av MIT-licensen i `LICENSE`. Personuppgiftsansvarig
+och juridiska villkor är öppna beslut.
 
 ## Product Principles
 

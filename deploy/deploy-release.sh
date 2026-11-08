@@ -6,7 +6,7 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ${GITHUB_REPOSITORY:-} == KaptenJon/var-plats ]]
 [[ ${GITHUB_REF_TYPE:-} == tag ]]
 [[ ${GITHUB_REF_NAME:-} =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
-[[ ${WEB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-web@sha256:[a-f0-9]{64}$ ]]
+[[ ${WEB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-deploy-web@sha256:[a-f0-9]{64}$ ]]
 [[ ${DB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-postgis@sha256:[a-f0-9]{64}$ ]]
 mkdir -p "$root/state"
 exec 9>"$root/state/deployment.lock"
@@ -17,6 +17,11 @@ previous_web=$(sed -n 's/^WEB_IMAGE=//p' "$config")
 previous_db=$(sed -n 's/^DB_IMAGE=//p' "$config")
 if [[ -f "$root/state/database-ready" ]]; then
     [[ $previous_db =~ ^ghcr\.io/kaptenjon/var-plats-postgis@sha256:[a-f0-9]{64}$ ]]
+    [[ $previous_web =~ ^ghcr\.io/kaptenjon/(var-plats-web|var-plats-deploy-web)@sha256:[a-f0-9]{64}$ ]]
+    if ! docker image inspect "$previous_web" > /dev/null; then
+        echo "The previous web image is not available locally for rollback." >&2
+        exit 1
+    fi
     if [[ $DB_IMAGE != "$previous_db" ]]; then
         echo "Keeping the existing database image; database upgrades require separate review."
     fi
@@ -65,7 +70,7 @@ rollback() {
     status=$?
     trap - EXIT
     if ((status != 0)) && [[ $web_changed == true ]]; then
-        if [[ $previous_web =~ ^ghcr\.io/kaptenjon/var-plats-web@sha256:[a-f0-9]{64}$ ]]; then
+        if [[ $previous_web =~ ^ghcr\.io/kaptenjon/(var-plats-web|var-plats-deploy-web)@sha256:[a-f0-9]{64}$ ]]; then
             echo "Deployment failed; restoring the previous web image." >&2
             export WEB_IMAGE="$previous_web"
             "${compose[@]}" up -d --no-build --no-deps web

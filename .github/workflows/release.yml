@@ -11,66 +11,31 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      web-image: ${{ steps.release.outputs.web-image }}
+      source-sha: ${{ steps.release.outputs.source-sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: Validate trusted version tag
+        id: release
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
           git merge-base --is-ancestor HEAD origin/main
+          image=$(bash deploy/release-image.sh "$RELEASE_TAG")
+          printf 'web-image=%s\n' "$image" >> "$GITHUB_OUTPUT"
+          printf 'source-sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
       - run: dotnet restore --locked-mode && dotnet build -c Release --no-restore && dotnet test -c Release --no-build
-  images:
-    needs: verify
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 25
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      web-digest: ${{ steps.web.outputs.digest }}
-      db-digest: ${{ steps.db.outputs.digest }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Image names
-        env:
-          REPOSITORY: ${{ github.repository }}
-        run: echo "IMAGE_PREFIX=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_ENV"
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        id: web
-        with:
-          context: .
-          file: deploy/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ${{ env.IMAGE_PREFIX }}-web:${{ github.ref_name }}
-          provenance: mode=max
-          sbom: true
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        id: db
-        with:
-          context: deploy/postgis
-          platforms: linux/arm64
-          push: true
-          tags: ${{ env.IMAGE_PREFIX }}-postgis:${{ github.ref_name }}
-          provenance: mode=max
-          sbom: true
   deploy-pi:
-    needs: images
+    needs: verify
     if: github.repository == 'KaptenJon/var-plats' && github.ref_type == 'tag'
     runs-on: [self-hosted, Linux, ARM64, varplats-deploy]
     environment: pi-preview
@@ -80,7 +45,6 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
-      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,10 +52,10 @@ jobs:
       - name: Deploy approved image digests
         shell: bash
         env:
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REGISTRY_USER: ${{ github.actor }}
-          WEB_IMAGE: ghcr.io/kaptenjon/var-plats-web@${{ needs.images.outputs.web-digest }}
-          DB_IMAGE: ghcr.io/kaptenjon/var-plats-postgis@${{ needs.images.outputs.db-digest }}
+          REGISTRY_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+          REGISTRY_USER: KaptenJon
+          WEB_IMAGE: ${{ needs.verify.outputs.web-image }}
+          SOURCE_SHA: ${{ needs.verify.outputs.source-sha }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
@@ -108,10 +72,31 @@ jobs:
         run: |
           set -euo pipefail
           install_root=/home/kapten/apps/varplats
+          [[ -n "$REGISTRY_TOKEN" ]]
+          export DOCKER_CONFIG
+          DOCKER_CONFIG=$(mktemp -d "$RUNNER_TEMP/varplats-docker.XXXXXX")
+          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          unset REGISTRY_TOKEN
+          bash "$GITHUB_WORKSPACE/deploy/verify-release-image.sh" "$WEB_IMAGE" "$SOURCE_SHA"
+          DB_IMAGE=$(sed -n 's/^DB_IMAGE=//p' "$install_root/deploy/.env")
+          [[ "$DB_IMAGE" =~ ^ghcr\.io/kaptenjon/var-plats-postgis@sha256:[a-f0-9]{64}$ ]]
+          export DB_IMAGE
+          [[ -f "$install_root/state/database-ready" ]]
+          previous_web=$(sed -n 's/^WEB_IMAGE=//p' "$install_root/deploy/.env")
+          [[ "$previous_web" =~ ^ghcr\.io/kaptenjon/(var-plats-web|var-plats-deploy-web)@sha256:[a-f0-9]{64}$ ]]
+          docker image inspect "$previous_web" > /dev/null
           existing_compose=(docker compose --project-name varplats --env-file "$install_root/deploy/.env"
             -f "$install_root/deploy/compose.yml" -f "$install_root/deploy/pi.override.yml")
           web_id=$("${existing_compose[@]}" ps -q web)
           [[ -n "$web_id" ]]
+          [[ "$(docker inspect --format '{{.Image}}' "$web_id")" == \
+             "$(docker image inspect --format '{{.Id}}' "$previous_web")" ]]
+          db_id=$("${existing_compose[@]}" ps -q db)
+          [[ -n "$db_id" ]]
+          [[ "$(docker inspect --format '{{.State.Health.Status}}' "$db_id")" == healthy ]]
+          [[ "$(docker inspect --format '{{.Image}}' "$db_id")" == \
+             "$(docker image inspect --format '{{.Id}}' "$DB_IMAGE")" ]]
           AUTHENTICATION_TRUSTED_PROXY_IP=$(
             docker inspect --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$web_id"
           )
@@ -123,19 +108,13 @@ jobs:
           compose=(docker compose --project-name varplats --env-file "$install_root/deploy/.env"
             -f "$install_root/deploy/compose.yml" -f "$install_root/deploy/pi.override.yml")
           "${compose[@]}" config --quiet
-          [[ -f "$install_root/state/database-ready" ]]
           "${compose[@]}" exec -T db psql -U varplats -d varplats -q -v ON_ERROR_STOP=1 \
             < "$GITHUB_WORKSPACE/deploy/identity-schema.sql"
           "${compose[@]}" exec -T db psql -U varplats -d varplats -q -v ON_ERROR_STOP=1 \
             < "$GITHUB_WORKSPACE/deploy/pi-identity-role.sql"
-          export DOCKER_CONFIG
-          DOCKER_CONFIG=$(mktemp -d "$RUNNER_TEMP/varplats-docker.XXXXXX")
-          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
-          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
-          unset REGISTRY_TOKEN
           /home/kapten/apps/varplats/bin/deploy-release.sh
   changelog:
-    needs: images
+    needs: deploy-pi
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
