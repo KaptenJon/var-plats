@@ -108,15 +108,21 @@ jobs:
         run: |
           set -euo pipefail
           install_root=/home/kapten/apps/varplats
-          compose=(docker compose --project-name varplats --env-file "$install_root/deploy/.env"
+          existing_compose=(docker compose --project-name varplats --env-file "$install_root/deploy/.env"
             -f "$install_root/deploy/compose.yml" -f "$install_root/deploy/pi.override.yml")
-          web_id=$("${compose[@]}" ps -q web)
+          web_id=$("${existing_compose[@]}" ps -q web)
           [[ -n "$web_id" ]]
           AUTHENTICATION_TRUSTED_PROXY_IP=$(
             docker inspect --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$web_id"
           )
           [[ "$AUTHENTICATION_TRUSTED_PROXY_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
           export AUTHENTICATION_TRUSTED_PROXY_IP
+          install -m 0644 "$GITHUB_WORKSPACE/deploy/compose.yml" "$install_root/deploy/compose.yml"
+          install -m 0644 "$GITHUB_WORKSPACE/deploy/pi.override.yml" "$install_root/deploy/pi.override.yml"
+          install -m 0755 "$GITHUB_WORKSPACE/deploy/deploy-release.sh" "$install_root/bin/deploy-release.sh"
+          compose=(docker compose --project-name varplats --env-file "$install_root/deploy/.env"
+            -f "$install_root/deploy/compose.yml" -f "$install_root/deploy/pi.override.yml")
+          "${compose[@]}" config --quiet
           [[ -f "$install_root/state/database-ready" ]]
           "${compose[@]}" exec -T db psql -U varplats -d varplats -q -v ON_ERROR_STOP=1 \
             < "$GITHUB_WORKSPACE/deploy/identity-schema.sql"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset AUTHENTICATION_ENABLED PUBLIC_BASE_URL FAIL_HEALTH FAIL_AUTH AUTH_ROUTE_STATUS
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
@@ -22,6 +23,9 @@ for expected in \
     'AUTHENTICATION_ENABLED: "true"' \
     'REPORTING_PUBLIC_WRITES: "false"' \
     'ADMIN_GITHUB_ID: "10761546"' \
+    'install -m 0644 "$GITHUB_WORKSPACE/deploy/compose.yml"' \
+    'install -m 0644 "$GITHUB_WORKSPACE/deploy/pi.override.yml"' \
+    'install -m 0755 "$GITHUB_WORKSPACE/deploy/deploy-release.sh"' \
     'deploy/identity-schema.sql' \
     'deploy/pi-identity-role.sql' \
     'AUTHENTICATION_TRUSTED_PROXY_IP'; do
@@ -40,6 +44,16 @@ count=0
 [[ ! -f "$TEST_CURL_COUNT" ]] || read -r count < "$TEST_CURL_COUNT"
 echo "$((count + 1))" > "$TEST_CURL_COUNT"
 if [[ ${FAIL_HEALTH:-0} == 1 && $count == 0 ]]; then exit 22; fi
+if [[ "$*" == *"/login"* ]]; then
+    if [[ ${FAIL_AUTH:-0} == 1 ]]; then
+        printf '%s' 'Inloggning är inte aktiverad i den här miljön.'
+    else
+        printf '%s' 'Logga in med en passkey eller säkerhetsnyckel.'
+    fi
+fi
+if [[ "$*" == *"/auth/signin/google"* ]]; then
+    printf '%s' "${AUTH_ROUTE_STATUS:-405}"
+fi
 MOCK
 chmod +x "$fixture/mocks/"*
 export PATH="$fixture/mocks:$PATH"
@@ -69,6 +83,20 @@ grep -F "$GITHUB_REF_NAME $WEB_IMAGE" "$fixture/state/current-release"
 [[ $(grep -c 'up -d --no-build --no-deps web' "$TEST_LOG") == 1 ]]
 ! cut -d '|' -f1 "$TEST_LOG" | grep -E 'down|up .* db|pull .*postgis'
 [[ $(stat -c '%a' "$fixture/deploy/.env") == 600 ]]
+
+reset_fixture
+AUTHENTICATION_ENABLED=true PUBLIC_BASE_URL=https://larbornhome.asuscomm.com:8010 \
+    bash "$fixture/bin/deploy-release.sh"
+grep -F "$GITHUB_REF_NAME $WEB_IMAGE" "$fixture/state/current-release"
+
+reset_fixture
+if AUTHENTICATION_ENABLED=true PUBLIC_BASE_URL=https://larbornhome.asuscomm.com:8010 FAIL_AUTH=1 \
+    bash "$fixture/bin/deploy-release.sh"; then
+    echo "Authentication-disabled deployment unexpectedly succeeded" >&2; exit 1
+fi
+grep -Fx "WEB_IMAGE=$old_web" "$fixture/deploy/.env"
+grep -Fx 'previous release' "$fixture/state/current-release"
+[[ $(grep -c 'up -d --no-build --no-deps web' "$TEST_LOG") == 2 ]]
 
 reset_fixture
 if FAIL_HEALTH=1 bash "$fixture/bin/deploy-release.sh"; then
