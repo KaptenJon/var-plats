@@ -127,4 +127,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG"
+        run: bash deploy/publish-release.sh "$RELEASE_TAG"

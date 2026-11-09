@@ -37,7 +37,7 @@ for expected in \
 done
 ! grep -Fq 'deploy/pi-public-write-role.sql' "$release_workflow"
 ! grep -Eiq 'CREATE TABLE "?reports"?|ALTER TABLE "?reports"?' "$root/deploy/identity-schema.sql"
-export TEST_LOG="$fixture/docker.log" TEST_CURL_COUNT="$fixture/curl.count"
+export TEST_LOG="$fixture/docker.log" TEST_CURL_COUNT="$fixture/curl.count" TEST_GH_LOG="$fixture/gh.log"
 cat > "$fixture/mocks/docker" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s | %s | %s\n' "$*" "${WEB_IMAGE:-}" "${DB_IMAGE:-}" >> "$TEST_LOG"
@@ -63,8 +63,24 @@ if [[ "$*" == *"/auth/signin/google"* ]]; then
     printf '%s' "${AUTH_ROUTE_STATUS:-405}"
 fi
 MOCK
+cat > "$fixture/mocks/gh" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$TEST_GH_LOG"
+MOCK
 chmod +x "$fixture/mocks/"*
 export PATH="$fixture/mocks:$PATH"
+bash "$root/deploy/publish-release.sh" v1.2.3-preview.6
+grep -Fxq -- 'v1.2.3-preview.6' "$TEST_GH_LOG"
+grep -Fxq -- '--prerelease' "$TEST_GH_LOG"
+grep -Fxq -- '--latest=false' "$TEST_GH_LOG"
+bash "$root/deploy/publish-release.sh" v1.2.3
+! grep -Fxq -- '--prerelease' "$TEST_GH_LOG"
+! grep -Fxq -- '--latest=false' "$TEST_GH_LOG"
+rm -f "$TEST_GH_LOG"
+if bash "$root/deploy/publish-release.sh" 'v1.2.3;invalid'; then
+    echo "An invalid release tag was not rejected" >&2; exit 1
+fi
+[[ ! -e "$TEST_GH_LOG" ]]
 mkdir "$fixture/repo"
 git -C "$fixture/repo" init -q
 git -C "$fixture/repo" -c user.name=CI -c user.email=ci@example.invalid \
