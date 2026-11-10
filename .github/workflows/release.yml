@@ -64,7 +64,9 @@ jobs:
           MAILJET_API_SECRET: ${{ secrets.MAILJET_API_SECRET }}
           MAILJET_SENDER_EMAIL: ${{ secrets.MAILJET_SENDER_EMAIL }}
           AUTHENTICATION_ENABLED: "true"
-          REPORTING_PUBLIC_WRITES: "false"
+          REPORTING_PUBLIC_WRITES: "true"
+          REPORTING_WORKFLOW_ENABLED: "true"
+          PHOTOS_ENABLED: "true"
           ADMIN_GITHUB_ID: "10761546"
           PUBLIC_BASE_URL: https://larbornhome.asuscomm.com:8010
           PASSKEY_SERVER_DOMAIN: larbornhome.asuscomm.com

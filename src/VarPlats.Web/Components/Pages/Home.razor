@@ -58,7 +58,14 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         }
         else
         {
-            <strong>Förhandsversion · endast läsning</strong><span>Kontoinloggning kan användas för att hantera inloggningsmetoder. Rapportering, åtgärder, bekräftelser och bevakning är avstängda.</span>
+            <AuthorizeView>
+                <Authorized>
+                    <strong>Förhandsversion · endast läsning</strong><span>Du är inloggad. <a href="/account/connections">Hantera inloggningsmetoder</a>. Rapportering, åtgärder, bekräftelser och bevakning är fortfarande avstängda i förhandsversionen.</span>
+                </Authorized>
+                <NotAuthorized>
+                    <strong>Förhandsversion · endast läsning</strong><span>Kontoinloggning kan användas för att hantera inloggningsmetoder. Rapportering, åtgärder, bekräftelser och bevakning är avstängda.</span>
+                </NotAuthorized>
+            </AuthorizeView>
         }
     </div>
     @if (Mode.PublicWorkflow && !canReport)
