@@ -6,12 +6,12 @@
     <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.4" />
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.4" />
     <PackageVersion Include="Radzen.Blazor" Version="12.1.10" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="11.0.0-rc.3.26522.148" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="11.0.0-rc.3.26522.148" />
-    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="11.0.0-rc.3.26522.148" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="11.0.0" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL.NetTopologySuite" Version="11.0.0-rc.3" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.Google" Version="11.0.0-rc.3.26522.148" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="11.0.0-rc.3.26522.148" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.Google" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="11.0.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.20.1" />
@@ -19,7 +19,7 @@
     <PackageVersion Include="Magick.NET-Q8-AnyCPU" Version="15.1.0" />
     <PackageVersion Include="SkiaSharp" Version="4.155.0" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.155.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0-rc.3.26522.148" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
