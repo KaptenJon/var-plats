@@ -79,9 +79,9 @@
       },
       "Radzen.Blazor": {
         "type": "Direct",
-        "requested": "[12.1.10, )",
-        "resolved": "12.1.10",
-        "contentHash": "p1PQEfqNpshoVZcTWO1s94JFQGOkGDzzxF7o/6XAL5USLqkIOy8PbS+jxueLOjeFb3+7sxVzJFwIsas8WYVUzQ==",
+        "requested": "[13.0.0, )",
+        "resolved": "13.0.0",
+        "contentHash": "ZkJ/G4vn+MhA8qPkuCEMKKtu6X8vHUJQjhbgh6zKmGHlLtomiWTtrXj2rv+XPcExkLft4DW39UM0hfZmhUzy0A==",
         "dependencies": {
           "Microsoft.Extensions.AI": "10.11.0"
         }
