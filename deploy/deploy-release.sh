@@ -84,6 +84,15 @@ rollback() {
     exit "$status"
 }
 trap rollback EXIT
+if [[ ${PHOTOS_ENABLED:-false} == true ]]; then
+    # Named volumes start root-owned; the app and clamd both run as UID 1654 and require private directories.
+    docker run --rm --user 0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+        --security-opt no-new-privileges:true --read-only --network none \
+        --volume varplats_photos:/photos --volume varplats_scanner-socket:/scanner \
+        --entrypoint sh "$WEB_IMAGE" -c \
+        'chown 1654:1654 /photos /scanner && chmod 0700 /photos /scanner'
+    "${compose[@]}" up -d --no-build --wait clamav
+fi
 web_changed=true
 "${compose[@]}" up -d --no-build --no-deps web
 curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 2 \

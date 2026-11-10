@@ -96,15 +96,17 @@ Webb kör som icke-root, med read-only rotfilsystem, tmpfs, borttagna capabiliti
 och beständig Data Protection-volym. Kryptering av volym/backup och nycklar är
 driftansvar. Kontrollera volymrättigheter innan första riktiga uppstart.
 
-### Framtida bildlagring – inte aktiverad i Pi-releasen
+### Bildlagring
 
-Bildkoden är opt-in och aktiverar inte bildtjänster i Compose eller release och
-ändrar inga grants eller resurser på Pi. Standard
-`Photos:Enabled=false` kräver ingen bildtabell, bildvolym eller skanner. Skapa
-inte dessa resurser och tillämpa inte `20261108164953_ReportPhotos` i den
-nuvarande förhandsversionen. Aktivering kräver separat ägarbeslut, granskade
-begränsade databasbehörigheter, backup och ett testat migrations-/återställnings-
-förfarande utöver alla skriv- och lanseringsgrindar i SECURITY.md.
+Release-workflowen sätter `PHOTOS_ENABLED=true` (ägarbeslut). Då skapar
+`deploy-release.sh` volymerna `photos` och `scanner-socket` med ägare UID 1654 och
+läge `0700`, och startar Compose-tjänsten `clamav` (profil `photos`, lokal
+Unix-socket, `deploy/clamd.conf`) innan webben. Databasdelen är fortfarande manuell:
+tillämpa `20261108164953_ReportPhotos` och ge `varplats_reader` SELECT, INSERT och
+DELETE på `report_photos` **före** releasen, annars misslyckas bildfunktionen. Ta
+backup först. `PHOTOS_ENABLED=false` stänger av allt igen; `clamav`-imagen är
+en tagg (`CLAMAV_IMAGE`) och bör pinnas till digest efter test på ARM64.
+Alla skriv- och lanseringsgrindar i SECURITY.md gäller fortfarande.
 
 För ett framtida isolerat driftprov krävs 64-bitars Linux med `procfs`, en
 dedikerad lokal lagringskatalog **utanför webroot**, ägd av webbprocessens UID
@@ -153,7 +155,7 @@ separat klassisk GitHub-token med `read:packages` för att hämta den privata
 webbimagen; den skickas inte till webbcontainern. Den kan läsa privata paket som
 kontot har tillgång till och måste roteras före utgång. Begränsa därför runner-
 och värdåtkomst. Den godkända release-workflowen aktiverar autentisering men
-håller `REPORTING_PUBLIC_WRITES` till `false`. Den läser Caddys exakta IPv4-gateway
+sätter `REPORTING_PUBLIC_WRITES` och `REPORTING_WORKFLOW_ENABLED` till `true`. Den läser Caddys exakta IPv4-gateway
 från det befintliga Vår plats-webbcontainerns nätverk; den gissar inte proxy-IP.
 
 Installationen under `/home/kapten/apps/varplats` innehåller `deploy/compose.yml`,
@@ -290,9 +292,11 @@ månad, med högst två månaders förlängning för komplexa ärenden och beske
 den första månaden. Säkerhetskopior kan innehålla raderade uppgifter tills
 rotationen löper ut.
 
-`REPORTING_PUBLIC_WRITES` är `false` i Compose-exemplet. Att sätta den till `true`
-kräver även fungerande OAuth-konfiguration och den separata manuella SQL-granten.
-Den aktuella releasen öppnar inte rapportskrivning.
+`REPORTING_PUBLIC_WRITES` och `REPORTING_WORKFLOW_ENABLED` är `false` i
+Compose-exemplet men `true` i release-workflowen. Rapportskrivning kräver
+fungerande OAuth-konfiguration och den separata manuella SQL-granten
+(`pi-public-write-role.sql`); utan den misslyckas skrivningar. Foton är
+fortsatt avstängda (`Photos:Enabled=false`).
 
 ## Backup, återställning och rollback
 

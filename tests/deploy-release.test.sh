@@ -25,7 +25,9 @@ for expected in \
     'REGISTRY_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}' \
     'deploy/verify-release-image.sh' \
     'AUTHENTICATION_ENABLED: "true"' \
-    'REPORTING_PUBLIC_WRITES: "false"' \
+    'REPORTING_PUBLIC_WRITES: "true"' \
+    'REPORTING_WORKFLOW_ENABLED: "true"' \
+    'PHOTOS_ENABLED: "true"' \
     'ADMIN_GITHUB_ID: "10761546"' \
     'install -m 0644 "$GITHUB_WORKSPACE/deploy/compose.yml"' \
     'install -m 0644 "$GITHUB_WORKSPACE/deploy/pi.override.yml"' \

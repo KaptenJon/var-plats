@@ -35,6 +35,10 @@ services:
       Map__TileUrl: ${TILE_URL:?Set TILE_URL in the untracked .env file}
       Authentication__Enabled: ${AUTHENTICATION_ENABLED:-false}
       Reporting__PublicWrites: ${REPORTING_PUBLIC_WRITES:-false}
+      Reporting__WorkflowEnabled: ${REPORTING_WORKFLOW_ENABLED:-false}
+      Photos__Enabled: ${PHOTOS_ENABLED:-false}
+      Photos__StoragePath: /var/lib/varplats/photos
+      Photos__ScannerSocketPath: /run/varplats/scanner/clamd.sock
       Authentication__PublicBaseUrl: ${PUBLIC_BASE_URL:-}
       Authentication__Passkeys__ServerDomain: ${PASSKEY_SERVER_DOMAIN:-}
       Authentication__Passkeys__Origins__0: ${PASSKEY_ORIGIN:-}
@@ -58,6 +62,30 @@ services:
       - /tmp
     volumes:
       - dataprotection:/home/app/.aspnet/DataProtection-Keys
+      - photos:/var/lib/varplats/photos
+      - scanner-socket:/run/varplats/scanner
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+  clamav:
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
+    profiles: [photos]
+    user: "1654:1654"
+    volumes:
+      - ./clamd.conf:/etc/clamav/clamd.conf:ro
+      - clamav-signatures:/var/lib/clamav
+      - scanner-socket:/run/varplats/scanner
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/clamav
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
@@ -68,3 +96,6 @@ secrets:
 volumes:
   postgres-data:
   dataprotection:
+  photos:
+  scanner-socket:
+  clamav-signatures:

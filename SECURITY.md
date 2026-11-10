@@ -45,8 +45,8 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   personuppgifter. Status härleds från aktuella rader, inte från ett sparat
   bekräftelsevärde. När arbetsflödet är avstängt läses inga åtgärdstabeller
   och den tidigare lagrade rapportstatusen visas. Nedmigrering raderar åtgärdsdata.
-- Bildfunktionen och migrationen `20261108164953_ReportPhotos` är avstängda och
-  inte tillämpade på Pi. En bild kan endast följa ett nytt rapportinskick eller
+- Bildfunktionen styrs av `PHOTOS_ENABLED` i release-workflowen; migrationen
+  `20261108164953_ReportPhotos` och databasgrants tillämpas manuellt på Pi. En bild kan endast följa ett nytt rapportinskick eller
   en ny åtgärd. Rapportbilder är publika först när rapporten godkänts och
   fortfarande finns; ägaren och behörig admin kan se opublicerade bilder.
   Åtgärdsbilder följer den direkt publicerade texten och kräver både befintlig
