@@ -23,7 +23,7 @@ RUN case "${TARGETARCH:-$(uname -m)}" in \
     && test -f "/app/runtimes/linux-$arch/native/libSkiaSharp.so" \
     && test -f "/app/runtimes/linux-$arch/native/Magick.Native-Q8-$arch.dll.so"
 
-FROM mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3@sha256:bae0269049d5061ab7f49995cc1acebf54b75471c096c4a1f874e27661d44045 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3@sha256:e1ba5ef29b9c0f51b4236cbd25268b84a1e15f8fb1dca21f141bd0358903a1f2 AS final
 WORKDIR /app
 COPY --from=build /app .
 USER $APP_UID
