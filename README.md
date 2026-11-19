@@ -6,8 +6,8 @@ i `LICENSE`; tredjepartskomponenter har separata villkor.
 
 ## Prova lokalt
 
-Installera SDK **11.0.100-rc.3.26522.148**, exakt enligt `global.json`.
-.NET 11 är fortfarande RC, inte stabil, vid verifieringen 2026-11-03.
+Installera SDK **11.0.100**, exakt enligt `global.json` (.NET 11, stabil release).
+EF Core-, Identity- och Npgsql-paketen är fortfarande RC 3; se docs/versions.md.
 SDK:n finns för Windows x64 och Linux ARM64 i Microsofts release-metadata.
 
 ```powershell

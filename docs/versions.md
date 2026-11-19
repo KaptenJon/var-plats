@@ -1,11 +1,13 @@
 # Versionsunderlag
 
-Kontrollerat 2026-11-03 mot faktiska paketindex och release-metadata. Ingen stabil
-.NET 11-release antas. Uppdatera som en sammanhållen kompatibilitetsändring.
+Kontrollerat 2026-11-03 mot faktiska paketindex och release-metadata; SDK och
+container-avbilder uppdaterade till stabil .NET 11 2026-11-19. Uppdatera som en
+sammanhållen kompatibilitetsändring.
 
 | Komponent | Låst version |
 |---|---|
-| .NET SDK | 11.0.100-rc.3.26522.148 |
+| .NET SDK | 11.0.100 |
+| Container-avbilder (bygg / körning) | dotnet/sdk:11.0.100 / dotnet/aspnet:11.0.0, låsta OCI-digests i Dockerfile |
 | ASP.NET Core / EF Core | 11.0.0-rc.3.26522.148 |
 | Npgsql EF Core + NetTopologySuite | 11.0.0-rc.3 |
 | Aspire AppHost SDK / hosting | 13.6.4 |

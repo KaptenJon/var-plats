@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:11.0.100-rc.3@sha256:3a9175b6c54b2f076817af1360f691c9994447b192faa48a1a1f112a516844c7 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0.100@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea AS build
 WORKDIR /source
 ARG TARGETARCH
 COPY global.json Directory.Build.props Directory.Packages.props LICENSE THIRD-PARTY-NOTICES.md ./
@@ -23,7 +23,7 @@ RUN case "${TARGETARCH:-$(uname -m)}" in \
     && test -f "/app/runtimes/linux-$arch/native/libSkiaSharp.so" \
     && test -f "/app/runtimes/linux-$arch/native/Magick.Native-Q8-$arch.dll.so"
 
-FROM mcr.microsoft.com/dotnet/aspnet:11.0.0-rc.3@sha256:bae0269049d5061ab7f49995cc1acebf54b75471c096c4a1f874e27661d44045 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0.0@sha256:bc0d6653979efba491ab3d6f589d691f96c309c3c3ef81325efa6978e7b7f242 AS final
 WORKDIR /app
 COPY --from=build /app .
 USER $APP_UID
