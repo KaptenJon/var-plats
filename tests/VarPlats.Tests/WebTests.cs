@@ -35,6 +35,26 @@ public sealed class WebTests
     }
 
     [Fact]
+    public async Task ApiFiltersByMapAreaAndRejectsIncompleteOrInvalidAreas()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/reports?south=59.33&west=18.06&north=59.34&east=18.07");
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("false", response.Headers.GetValues("X-Reports-Truncated").Single());
+        var reports = await response.Content.ReadFromJsonAsync<Report[]>();
+        Assert.Equal("En bänk behöver ses över", Assert.Single(reports!).Title);
+
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.GetAsync("/api/reports?south=59&west=18&north=60")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.GetAsync("/api/reports?south=60&west=18&north=59&east=19")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.GetAsync("/api/reports?south=abc&west=18&north=59&east=19")).StatusCode);
+    }
+
+    [Fact]
     public async Task LoginPageKeepsExternalSignInDisabledUntilConfigured()
     {
         await using var factory = CreateFactory();

@@ -36,6 +36,11 @@ internal sealed class ReportWorkflowTestStore : IReportStore, IReportWorkflowSto
         lock (gate) return Task.FromResult<IReadOnlyList<Report>>(published.Select(WithStatus).ToArray());
     }
 
+    public Task<ReportPage> ListInAreaAsync(MapArea area, CancellationToken cancellationToken = default)
+    {
+        lock (gate) return Task.FromResult(area.Select(published.Select(WithStatus).ToArray()));
+    }
+
     public Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
         lock (gate)

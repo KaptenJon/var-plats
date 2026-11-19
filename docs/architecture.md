@@ -21,8 +21,14 @@ ingen bilduppladdning i demon, inga poäng. Reload är ingen beständig lagrings
 Aspire: samma UI → samma domänvalidering → EF Core → PostGIS geography(Point,4326)
 med GiST-index. Longitud är X, latitud är Y. Latitud begränsas till ±85 för
 Web Mercator-kartan; ingen automatisk precisionsökning eller spårning.
-Läsningen tar de senaste 200 rapporterna; detta är en tydlig prototypbegränsning,
-inte geografisk sökning eller paginering. Dessa krävs före skalning.
+Kartan hämtar rapporterna i sin synliga vy: högst 200, senast rapporterade först,
+och listan visar när fler finns så att användaren kan zooma in. Små vyer går via
+GiST-indexet med en förtätad och marginalutökad omslutning, eftersom geography-
+polygonens kanter är storcirkelbågar; en exakt latitud/longitud-kontroll tar bort
+marginalen. Mycket breda vyer och vyer över datumgränsen använder bara den exakta
+kontrollen. Läs-API:t tar `south`, `west`, `north` och `east` tillsammans och svarar
+med `X-Reports-Truncated`; utan dem, och om kartan inte laddas, visas de senaste 200
+rapporterna totalt. Paginering finns inte ännu.
 
 `Reporting:Demo` och `Reporting:LocalWrites` får bara användas i Development.
 All trafik i dessa lägen måste komma från loopback. `Reporting:PublicWrites` är
@@ -70,7 +76,7 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
 
 1. **Moderering:** driftsättning av granskningskö, rapportera missbruk, överklaganden,
    begränsningar, återställning och rate limits.
-2. **Rapporter:** statusövergångar, geografisk sökning, dubbletter och säker
+2. **Rapporter:** statusövergångar, dubbletter och säker
    driftsättning av den avstängda bildpipelinens kontroller och moderering.
 3. **Åtgärder:** den avstängda grundskivan sparar beskrivningar på publicerade
    rapporter; bevis, missbruksflöde och en säker lansering återstår.

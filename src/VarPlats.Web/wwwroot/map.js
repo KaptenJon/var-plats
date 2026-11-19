@@ -1,4 +1,4 @@
-let map, layer, picker, callback, picking = false;
+let map, layer, picker, callback, picking = false, areaTimer;
 const markers = new Map();
 
 export function initialize(id, options, dotnet) {
@@ -16,6 +16,15 @@ export function initialize(id, options, dotnet) {
   tiles.once("tileerror", () => callback.invokeMethodAsync("TileLoadingFailed")
     .catch(error => console.error("Kartfelet kunde inte visas i gränssnittet.", error)));
   layer = L.layerGroup().addTo(map);
+  map.on("moveend", () => {
+    clearTimeout(areaTimer);
+    areaTimer = setTimeout(() => {
+      if (!callback) return;
+      const [south, west, north, east] = currentArea();
+      callback.invokeMethodAsync("MapAreaChanged", south, west, north, east)
+        .catch(error => console.error("Rapporter för kartans vy kunde inte hämtas.", error));
+    }, 300);
+  });
   map.on("click", async event => {
     if (!picking) return;
     if (picker) picker.remove();
@@ -24,10 +33,19 @@ export function initialize(id, options, dotnet) {
   });
 }
 
+export function currentArea() {
+  const bounds = map.getBounds();
+  return [bounds.getSouth(), bounds.getWest(), bounds.getNorth(), bounds.getEast()];
+}
+
+// Markers are updated in place so an open popup survives when the visible area is reloaded.
 export function setReports(reports) {
-  layer.clearLayers();
-  markers.clear();
+  const wanted = new Set(reports.map(report => report.id));
+  for (const [id, marker] of markers) {
+    if (!wanted.has(id)) { marker.remove(); markers.delete(id); }
+  }
   for (const report of reports) {
+    if (markers.has(report.id)) continue;
     const broken = report.category === 1;
     const marker = L.marker([report.latitude, report.longitude], {
       icon: L.divIcon({
@@ -70,6 +88,7 @@ export function focusReport(id, latitude, longitude) {
   }
 }
 export function dispose() {
+  clearTimeout(areaTimer);
   map?.remove();
   markers.clear();
   map = layer = picker = callback = null;

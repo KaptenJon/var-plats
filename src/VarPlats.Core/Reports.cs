@@ -53,6 +53,7 @@ public sealed class ReportDraft : IValidatableObject
 public interface IReportStore
 {
     Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default);
+    Task<ReportPage> ListInAreaAsync(MapArea area, CancellationToken cancellationToken = default);
     Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Report> AddAsync(ReportDraft draft, CancellationToken cancellationToken = default);
     Task<bool> RemoveAsync(Guid id, CancellationToken cancellationToken = default);
@@ -80,6 +81,9 @@ public sealed class DemoReportStore : IReportStore
 
     public Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<Report>>(reports.ToArray());
+
+    public Task<ReportPage> ListInAreaAsync(MapArea area, CancellationToken cancellationToken = default)
+        => Task.FromResult(area.Select(reports));
 
     public Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default)
         => Task.FromResult(reports.FirstOrDefault(report => report.Id == id));
