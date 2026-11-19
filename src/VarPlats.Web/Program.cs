@@ -28,6 +28,7 @@ var localWrites = builder.Configuration.GetValue<bool>("Reporting:LocalWrites");
 var publicWrites = builder.Configuration.GetValue<bool>("Reporting:PublicWrites");
 var workflowEnabled = builder.Configuration.GetValue<bool>("Reporting:WorkflowEnabled");
 var flagsEnabled = builder.Configuration.GetValue<bool>("Reporting:FlagsEnabled");
+var archiveEnabled = builder.Configuration.GetValue<bool>("Reporting:ArchiveEnabled");
 var authenticationEnabled = builder.Configuration.GetValue<bool>("Authentication:Enabled");
 if ((demo || localWrites) && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Demo och lokala skrivningar är endast tillåtna i Development.");
@@ -45,8 +46,11 @@ if (authenticationEnabled && demo)
     throw new InvalidOperationException("Autentisering kräver databasläge och kan inte användas med Reporting:Demo.");
 if (flagsEnabled && !workflowEnabled)
     throw new InvalidOperationException("Reporting:FlagsEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
+if (archiveEnabled && !workflowEnabled)
+    throw new InvalidOperationException("Reporting:ArchiveEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
 
-var reportingMode = new ReportingMode(demo, localWrites, publicWrites, workflowEnabled, flagsEnabled);
+var reportingMode = new ReportingMode(demo, localWrites, publicWrites, workflowEnabled, flagsEnabled,
+    archiveEnabled);
 var photoOptions = builder.Configuration.GetSection("Photos").Get<PhotoOptions>() ?? new PhotoOptions();
 photoOptions.Validate(reportingMode, authenticationEnabled,
     builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot"));
@@ -98,6 +102,7 @@ builder.Services.AddSingleton(photoOptions);
 builder.Services.AddScoped<ReportCommands>();
 builder.Services.AddScoped<ReportActionCommands>();
 builder.Services.AddScoped<ContentFlagCommands>();
+builder.Services.AddScoped<ReportArchiveCommands>();
 builder.Services.AddScoped<PhotoUploadCommands>();
 if (photoOptions.Enabled)
 {
@@ -347,6 +352,7 @@ else
     builder.Services.AddScoped<IReportWorkflowStore, DatabaseReportWorkflowStore>();
     builder.Services.AddScoped<IReportActionStore, DatabaseReportActionStore>();
     builder.Services.AddScoped<IContentFlagStore, DatabaseContentFlagStore>();
+    builder.Services.AddScoped<IReportArchiveStore, DatabaseReportArchiveStore>();
     builder.Services.AddHealthChecks().AddDbContextCheck<ReportDbContext>();
 }
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();

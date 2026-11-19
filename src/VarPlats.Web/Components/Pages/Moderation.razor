@@ -9,6 +9,7 @@
 @inject ReportCommands Commands
 @inject ReportActionCommands Actions
 @inject ContentFlagCommands Flags
+@inject ReportArchiveCommands Archives
 @inject ReportingMode Mode
 @inject IPhotoReader Photos
 @inject IJSRuntime JS
@@ -133,6 +134,32 @@
                 }
             </section>
         }
+
+        @if (Mode.Archive)
+        {
+            <section aria-labelledby="archive-heading">
+                <h2 id="archive-heading">Arkiverade rapporter</h2>
+                <p>Arkiverade rapporter visas inte på kartan, i listan eller i läs-API:t. Öppna rapporten för att återställa den.</p>
+                @if (archiveError is not null)
+                {
+                    <p class="error" role="alert">@archiveError</p>
+                }
+                else if (archived.Count == 0)
+                {
+                    <p>Inga arkiverade rapporter.</p>
+                }
+                else
+                {
+                    <p>Senast arkiverade först · högst 200</p>
+                    <ul>
+                        @foreach (var item in archived)
+                        {
+                            <li @key="item.ReportId"><a href="@($"/rapporter/{item.ReportId}")">@item.Title</a> · @ArchiveText.Reason(item.Reason) · @item.ArchivedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC</li>
+                        }
+                    </ul>
+                }
+            </section>
+        }
     }
     <p><a href="/">Tillbaka till kartan</a></p>
 </main>
@@ -141,6 +168,8 @@
     private IReadOnlyList<ReportSubmission> submissions = [];
     private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>();
     private IReadOnlyList<FlaggedContent> flagged = [];
+    private IReadOnlyList<ArchivedReport> archived = [];
+    private string? archiveError;
     private bool allowed, loading, busy, flagsLoading;
     private string? error, status, flagError;
 
@@ -180,6 +209,25 @@
         }
         finally { loading = false; }
         await ReloadFlags();
+        await ReloadArchive();
+    }
+
+    private async Task ReloadArchive()
+    {
+        if (!Mode.Archive) return;
+        archiveError = null;
+        try { archived = await Archives.ListAsync((await AuthenticationStateTask).User); }
+        catch (UnauthorizedAccessException)
+        {
+            archived = [];
+            archiveError = "Du har inte behörighet att visa arkiverade rapporter.";
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Arkiverade rapporter kunde inte hämtas.");
+            archived = [];
+            archiveError = "Arkiverade rapporter kunde inte hämtas. Kontrollera att migrationen ReportArchive är tillämpad.";
+        }
     }
 
     // Separate from the submission queue so a missing flags table cannot hide pending submissions.

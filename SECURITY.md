@@ -72,6 +72,16 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   anmälningarna. Kommentaren är fritext och kan innehålla personuppgifter
   trots varningen. Detta ersätter inte bemannad moderering, överklaganden
   eller skydd mot samordnade falska anmälningar.
+- Arkivering och migrationen `20261119222822_ReportArchive` är avstängda
+  (`Reporting:ArchiveEnabled=false`) och inte tillämpade på Pi. Inställningen
+  kräver `Reporting:WorkflowEnabled`; att arkivera eller återställa kräver
+  dessutom publika skrivningar och ett verifierat administratörskonto.
+  Arkivstatus ligger i egna tabeller, så rapporttabellen och dess grants ändras
+  inte. Arkiverade rapporter filtreras bort från karta, lista, läs-API och
+  närliggande tips men rapportsidan kan fortfarande läsas, och nya åtgärder
+  nekas i databasfrågan. Historiken sparar händelse, anledning, kommentar och
+  tid men inte vilket administratörskonto som agerade. Kommentaren är publik
+  fritext. När inställningen är av läses inga arkivtabeller.
 - Bildkoden kontrollerar byteantal, verklig JPEG/PNG, dimensioner och pixlar,
   avkodar/ritar om utan inmetadata och kräver ett rent svar från en privat lokal
   clamd-socket både före och efter omkodning. Timeout, skannerfel, lagringsfel

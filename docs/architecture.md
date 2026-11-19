@@ -74,6 +74,14 @@ utan anmälarens konto, och kan avfärda anmälningarna eller ta bort innehålle
 med de befintliga borttagningskommandona. Unikt index, dygnsgräns per konto och
 kaskadradering hålls i databasen.
 
+Arkivering är också en separat avstängd skiva med egen migration
+(`ReportArchive`) och egen inställning, `Reporting:ArchiveEnabled`, som kräver
+arbetsflödet. Admin kan arkivera en publicerad rapport som åtgärdad, inaktuell,
+dubblett eller annat, med en frivillig publik kommentar, och återställa den.
+Tillståndet ligger i `report_archives` och historiken i `report_archive_events`,
+så den publika rapporttabellen ändras inte. Läsningar för karta, lista, API och
+närliggande tips utesluter arkiverade rapporter bara när inställningen är på.
+
 Den separat avstängda bildskivan tar emot högst en bild samtidigt med ett nytt
 inskick eller en ny åtgärd. Skanning och metadatafri omkodning sker innan
 texten sparas; filen placeras atomärt och bildmetadata och förälder sparas i
@@ -91,7 +99,8 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
 1. **Moderering:** driftsättning av granskningskö och anmälningar (kod finns,
    avstängd bakom `Reporting:FlagsEnabled`), överklaganden,
    begränsningar, återställning och rate limits.
-2. **Rapporter:** statusövergångar, sammanslagning av dubbletter och säker
+2. **Rapporter:** arkivering finns bakom `Reporting:ArchiveEnabled`; sammanslagning
+   av dubbletter och säker
    driftsättning av den avstängda bildpipelinens kontroller och moderering.
 3. **Åtgärder:** den avstängda grundskivan sparar beskrivningar på publicerade
    rapporter; bevis, missbruksflöde och en säker lansering återstår.
