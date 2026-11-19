@@ -459,6 +459,13 @@ public sealed class ReportWorkflowDatabaseTests
         Assert.Single((await store.ListInAreaAsync(Area(-85, -400, 85, 400))).Reports);
         Assert.Empty((await store.ListInAreaAsync(Area(-20, 170, -10, 190))).Reports);
 
+        // Nearby lookup for duplicate hints: ST_DWithin in metres on the geography column.
+        var close = Assert.Single(await store.ListNearAsync(59.3296, 18.0686));
+        Assert.Equal(stockholm, close.Report.Id);
+        Assert.InRange(close.DistanceMeters, 30, 37);
+        Assert.Empty(await store.ListNearAsync(59.3300, 18.0686));
+        Assert.Empty(await store.ListNearAsync(double.NaN, 18.0686));
+
         await db.Database.ExecuteSqlRawAsync("""
             INSERT INTO reports ("Id", "Title", "Description", "Category", "Location", "CreatedAt", "Status")
             SELECT gen_random_uuid(), 'Syntetisk områdesrapport', 'Ett påhittat exempel utan personuppgifter.', 0,

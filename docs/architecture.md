@@ -30,6 +30,12 @@ kontrollen. Läs-API:t tar `south`, `west`, `north` och `east` tillsammans och s
 med `X-Reports-Truncated`; utan dem, och om kartan inte laddas, visas de senaste 200
 rapporterna totalt. Paginering finns inte ännu.
 
+När någon fyller i en ny rapport visar formuläret upp till fem publicerade
+rapporter inom 50 meter från vald plats, närmast först, så att dubbletter kan
+upptäckas före inskick. Databasen använder `ST_DWithin` på geography-kolumnen,
+alltså meter och GiST-index. Väntande inskick visas aldrig. Tipset stoppar inte
+inskicket och påverkar inte några grindar.
+
 `Reporting:Demo` och `Reporting:LocalWrites` får bara användas i Development.
 All trafik i dessa lägen måste komma från loopback. `Reporting:PublicWrites` är
 avstängd som standard och kräver både autentisering och ett uttryckligt
@@ -76,7 +82,7 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
 
 1. **Moderering:** driftsättning av granskningskö, rapportera missbruk, överklaganden,
    begränsningar, återställning och rate limits.
-2. **Rapporter:** statusövergångar, dubbletter och säker
+2. **Rapporter:** statusövergångar, sammanslagning av dubbletter och säker
    driftsättning av den avstängda bildpipelinens kontroller och moderering.
 3. **Åtgärder:** den avstängda grundskivan sparar beskrivningar på publicerade
    rapporter; bevis, missbruksflöde och en säker lansering återstår.

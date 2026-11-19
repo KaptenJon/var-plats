@@ -108,8 +108,26 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                     <label for="description">Beskrivning</label>
                     <InputTextArea id="description" @bind-Value="draft.Description" maxlength="1000" rows="4" />
                     <div class="coordinate-fields">
-                        <div><label for="latitude">Latitud</label><InputNumber id="latitude" @bind-Value="draft.Latitude" step="any" /></div>
-                        <div><label for="longitude">Longitud</label><InputNumber id="longitude" @bind-Value="draft.Longitude" step="any" /></div>
+                        <div><label for="latitude">Latitud</label><InputNumber id="latitude" @bind-Value="draft.Latitude" @bind-Value:after="LoadNearby" step="any" /></div>
+                        <div><label for="longitude">Longitud</label><InputNumber id="longitude" @bind-Value="draft.Longitude" @bind-Value:after="LoadNearby" step="any" /></div>
+                    </div>
+                    <div class="nearby" aria-live="polite">
+                        @if (nearby.Count > 0)
+                        {
+                            <h3>Finns platsen redan rapporterad?</h3>
+                            <p class="small">@(nearby.Count == 1 ? "En publicerad rapport" : $"{nearby.Count} publicerade rapporter") inom @((int)ReportProximity.RadiusMeters) meter. Kontrollera om din observation redan finns innan du skickar en ny.</p>
+                            <ul class="nearby-list">
+                                @foreach (var item in nearby)
+                                {
+                                    <li @key="item.Report.Id">
+                                        <span class="report-category">@CategoryName(item.Report.Category) · @DistanceText(item.DistanceMeters)</span>
+                                        <strong>@item.Report.Title</strong>
+                                        <span class="report-description">@item.Report.Description</span>
+                                        <button type="button" class="text-button" @onclick="() => Select(item.Report)" aria-label="@($"Visa {item.Report.Title} på kartan")">Visa på kartan</button>
+                                    </li>
+                                }
+                            </ul>
+                        }
                     </div>
                     @if (Mode.PublicWorkflow && PhotoSettings.Enabled)
                     {
@@ -182,6 +200,8 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     private IReadOnlyList<Report> reports = [];
     private ReportDraft draft = new();
     private PhotoSelection photoSelection = new(null, false);
+    private IReadOnlyList<NearbyReport> nearby = [];
+    private int nearbyVersion;
     private bool showForm, saving, loading = true, refreshing, truncated;
     private MapArea? area;
     private int loadVersion;
@@ -291,12 +311,15 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         if (!canReport) return;
         showForm = true;
         status = null;
+        await LoadNearby();
         await InvokeMap("setPicking", true);
     }
     private async Task CloseForm()
     {
         showForm = false;
         photoSelection = new(null, false);
+        nearbyVersion++;
+        nearby = [];
         await InvokeMap("setPicking", false);
     }
     private void SetPhoto(PhotoSelection selection) => photoSelection = selection;
@@ -327,7 +350,12 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         if (!showForm) return Task.CompletedTask;
         draft.Latitude = Math.Round(latitude, 6);
         draft.Longitude = Math.Round(longitude, 6);
-        return InvokeAsync(StateHasChanged);
+        return InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            await LoadNearby();
+            StateHasChanged();
+        });
     }
     [JSInvokable]
     public Task SelectReportFromMap(Guid reportId)
@@ -433,6 +461,23 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         }
         finally { removing = false; }
     }
+    // Published reports only: pending submissions are never shown here. Failures only hide the hint.
+    private async Task LoadNearby()
+    {
+        var version = ++nearbyVersion;
+        try
+        {
+            var found = await Store.ListNearAsync(draft.Latitude, draft.Longitude);
+            if (version == nearbyVersion && showForm) nearby = found;
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or InvalidOperationException)
+        {
+            Logger.LogWarning(exception, "Närliggande rapporter kunde inte hämtas.");
+            if (version == nearbyVersion) nearby = [];
+        }
+    }
+    private static string DistanceText(double meters)
+        => meters < 1 ? "på samma plats" : $"ca {Math.Round(meters):0} m bort";
     private static string CategoryName(ReportCategory category) => category switch
     {
         ReportCategory.Litter => "Skräp", ReportCategory.Broken => "Trasigt", _ => "Annat"
