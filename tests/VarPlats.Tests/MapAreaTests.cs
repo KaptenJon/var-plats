@@ -88,3 +88,47 @@ public sealed class MapAreaTests
         Assert.Empty((await store.ListInAreaAsync(elsewhere)).Reports);
     }
 }
+
+public sealed class ReportProximityTests
+{
+    [Fact]
+    public void OneDegreeOfLatitudeIsAboutOneHundredElevenKilometres()
+        => Assert.Equal(111_195, ReportProximity.DistanceMeters(59, 18, 60, 18), 0);
+
+    [Fact]
+    public void SelectKeepsReportsWithinRadiusNearestFirst()
+    {
+        static Report At(double latitude, double longitude) => new(Guid.NewGuid(), "Syntetisk rapport",
+            "Påhittat exempel utan personuppgifter.", ReportCategory.Litter, latitude, longitude, DateTimeOffset.UtcNow);
+        var near = At(59.3296, 18.0686);     // ~33 m north
+        var nearest = At(59.32935, 18.0686); // ~6 m north
+        var outside = At(59.3300, 18.0686);  // ~78 m north
+        var many = Enumerable.Range(0, 10).Select(_ => At(59.3294, 18.0686));
+
+        var result = ReportProximity.Select([near, nearest, outside, .. many], 59.3293, 18.0686);
+
+        Assert.Equal(ReportProximity.MaxResults, result.Count);
+        Assert.DoesNotContain(result, item => item.Report.Id == outside.Id);
+        Assert.True(result.Zip(result.Skip(1)).All(pair => pair.First.DistanceMeters <= pair.Second.DistanceMeters));
+        Assert.Equal(nearest.Id, ReportProximity.Select([near, nearest, outside], 59.3293, 18.0686)[0].Report.Id);
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 18)]
+    [InlineData(86, 18)]
+    [InlineData(59, 181)]
+    public void InvalidLocationsReturnNothing(double latitude, double longitude)
+        => Assert.Empty(ReportProximity.Select([new Report(Guid.NewGuid(), "Syntetisk rapport",
+            "Påhittat exempel utan personuppgifter.", ReportCategory.Litter, 59, 18, DateTimeOffset.UtcNow)],
+            latitude, longitude));
+
+    [Fact]
+    public async Task DemoStoreFindsOnlyTheNearbySeedReport()
+    {
+        var store = new DemoReportStore();
+        var nearby = Assert.Single(await store.ListNearAsync(59.3295, 18.0686));
+        Assert.Equal("Skräp vid gångvägen", nearby.Report.Title);
+        Assert.InRange(nearby.DistanceMeters, 20, 25);
+        Assert.Empty(await store.ListNearAsync(59.34, 18.08));
+    }
+}

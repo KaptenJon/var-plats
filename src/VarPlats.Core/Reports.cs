@@ -54,6 +54,8 @@ public interface IReportStore
 {
     Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default);
     Task<ReportPage> ListInAreaAsync(MapArea area, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<NearbyReport>> ListNearAsync(double latitude, double longitude,
+        CancellationToken cancellationToken = default);
     Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Report> AddAsync(ReportDraft draft, CancellationToken cancellationToken = default);
     Task<bool> RemoveAsync(Guid id, CancellationToken cancellationToken = default);
@@ -84,6 +86,10 @@ public sealed class DemoReportStore : IReportStore
 
     public Task<ReportPage> ListInAreaAsync(MapArea area, CancellationToken cancellationToken = default)
         => Task.FromResult(area.Select(reports));
+
+    public Task<IReadOnlyList<NearbyReport>> ListNearAsync(double latitude, double longitude,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(ReportProximity.Select(reports, latitude, longitude));
 
     public Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default)
         => Task.FromResult(reports.FirstOrDefault(report => report.Id == id));
