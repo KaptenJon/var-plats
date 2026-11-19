@@ -89,3 +89,33 @@ public sealed record ReportPage(IReadOnlyList<Report> Reports, bool Truncated)
             ? new(newestFirst.Take(MapArea.MaxResults).ToArray(), true)
             : new(newestFirst, false);
 }
+
+/// <summary>
+/// A map centre and zoom, as carried in a shareable link (?lat=&amp;lon=&amp;z=). It is only a position someone
+/// chose on the map, never the viewer's own location.
+/// </summary>
+public sealed record MapView(double Latitude, double Longitude, int Zoom)
+{
+    public const int MinZoom = 3;
+    public const int MaxZoom = 19;
+    public const int ReportZoom = 17;
+    public static MapView Default { get; } = new(59.3293, 18.0686, 14);
+
+    /// <summary>Parses query values with invariant culture; returns false for anything missing or out of range.</summary>
+    public static bool TryParse(string? latitude, string? longitude, string? zoom, out MapView view)
+    {
+        view = Default;
+        const System.Globalization.NumberStyles style = System.Globalization.NumberStyles.Float;
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        if (!double.TryParse(latitude, style, culture, out var lat) || !double.TryParse(longitude, style, culture, out var lon)
+            || !int.TryParse(zoom, System.Globalization.NumberStyles.None, culture, out var z))
+            return false;
+        if (!double.IsFinite(lat) || !double.IsFinite(lon) || Math.Abs(lat) > MapArea.MaxLatitude || Math.Abs(lon) > 180
+            || z is < MinZoom or > MaxZoom)
+            return false;
+        view = new(Math.Round(lat, 5), Math.Round(lon, 5), z);
+        return true;
+    }
+
+    public static MapView ForReport(Report report) => new(report.Latitude, report.Longitude, ReportZoom);
+}

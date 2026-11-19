@@ -106,3 +106,4 @@ footer { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wr
 @media (prefers-reduced-motion: no-preference) {
   .report-item { transition: background-color 140ms ease-out; }
 }
+.map-share { position: absolute; z-index: 500; top: 12px; right: 12px; min-height: 44px; padding: 8px 12px; background: white; box-shadow: 0 2px 8px #18342a26; }

@@ -30,6 +30,11 @@ kontrollen. Läs-API:t tar `south`, `west`, `north` och `east` tillsammans och s
 med `X-Reports-Truncated`; utan dem, och om kartan inte laddas, visas de senaste 200
 rapporterna totalt. Paginering finns inte ännu.
 
+Kartvyn kan delas: adressfältet följer kartan som `?lat=&lon=&z=` och
+`?rapport=<id>` öppnar kartan på en publicerad rapport. Värdena tolkas av
+`MapView` och ogiltiga värden ger startvyn. Länken innehåller bara en plats som
+någon valt på kartan, aldrig besökarens position, och ingen position sparas.
+
 `Reporting:Demo` och `Reporting:LocalWrites` får bara användas i Development.
 All trafik i dessa lägen måste komma från loopback. `Reporting:PublicWrites` är
 avstängd som standard och kräver både autentisering och ett uttryckligt
