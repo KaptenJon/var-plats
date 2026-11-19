@@ -98,9 +98,9 @@
       },
       "SkiaSharp.NativeAssets.Linux.NoDependencies": {
         "type": "Direct",
-        "requested": "[4.156.1, )",
-        "resolved": "4.156.1",
-        "contentHash": "p7LcHVbwsLOmvugPySgjA/ncq/BFap1MMbRs1u119PD8ZYFZYWaFS7MIT1e6ObwJGkJ9HVV9lEvugt30IjmFOA=="
+        "requested": "[4.157.0, )",
+        "resolved": "4.157.0",
+        "contentHash": "7skQaAxilNr4giLQPr1HMTFrwhUAJKI2Qlr7Djybi/e24Td/F4j7lIRf7DKJeHfH9mdxvD000o/NciDd8lSg5A=="
       },
       "Humanizer.Core": {
         "type": "Transitive",
