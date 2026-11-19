@@ -66,6 +66,14 @@ EF vid varje uppstart. Senare schemaändringar kräver separat granskad migratio
 backup, återställningsprov och kompatibilitetsplan. Init-script är inte migrationer.
 Åtgärdsmigrationen och nya databasbehörigheter tillämpas inte automatiskt vid release.
 
+Anmälan av innehåll är en separat avstängd skiva med egen migration
+(`ContentFlags`) och egen inställning, `Reporting:FlagsEnabled`, som kräver
+arbetsflödet. Behöriga konton kan anmäla en publicerad rapport eller åtgärdstext
+med en anledning och en frivillig kommentar. Admin ser en kö grupperad per objekt,
+utan anmälarens konto, och kan avfärda anmälningarna eller ta bort innehållet
+med de befintliga borttagningskommandona. Unikt index, dygnsgräns per konto och
+kaskadradering hålls i databasen.
+
 Den separat avstängda bildskivan tar emot högst en bild samtidigt med ett nytt
 inskick eller en ny åtgärd. Skanning och metadatafri omkodning sker innan
 texten sparas; filen placeras atomärt och bildmetadata och förälder sparas i
@@ -80,7 +88,8 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
 
 ## Nästa moduler och regler
 
-1. **Moderering:** driftsättning av granskningskö, rapportera missbruk, överklaganden,
+1. **Moderering:** driftsättning av granskningskö och anmälningar (kod finns,
+   avstängd bakom `Reporting:FlagsEnabled`), överklaganden,
    begränsningar, återställning och rate limits.
 2. **Rapporter:** statusövergångar, sammanslagning av dubbletter och säker
    driftsättning av den avstängda bildpipelinens kontroller och moderering.
