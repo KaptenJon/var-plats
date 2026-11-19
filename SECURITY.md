@@ -58,6 +58,20 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   Bildernas metadata har ingen kontonyckel. Kontoborttagning tar bort förälderns
   kontolänk men behåller bild och text; personuppgifter som syns i en bild eller
   finns i fritext rensas inte av detta.
+- Anmälan av innehåll och migrationen `20261119061342_ContentFlags` är
+  avstängda (`Reporting:FlagsEnabled=false`) och inte tillämpade på Pi.
+  Inställningen kräver `Reporting:WorkflowEnabled`; att anmäla kräver dessutom
+  publika skrivningar och ett verifierat medlems- eller administratörskonto.
+  Bara publicerade rapporter och åtgärdstexter kan anmälas, inte väntande
+  inskick. Ett unikt index (`NULLS NOT DISTINCT`) tillåter en anmälan per konto
+  och objekt, och varje konto kan göra högst 20 anmälningar per dygn
+  (serialiserat med ett transaktionslås per konto). Administratörer ser antal,
+  anledningar och kommentarer men inte vilket konto som anmält. Avfärdade
+  anmälningar behålls så att samma konto inte kan anmäla samma objekt igen.
+  Borttagning av rapport eller åtgärd och kontoborttagning kaskadraderar
+  anmälningarna. Kommentaren är fritext och kan innehålla personuppgifter
+  trots varningen. Detta ersätter inte bemannad moderering, överklaganden
+  eller skydd mot samordnade falska anmälningar.
 - Bildkoden kontrollerar byteantal, verklig JPEG/PNG, dimensioner och pixlar,
   avkodar/ritar om utan inmetadata och kräver ett rent svar från en privat lokal
   clamd-socket både före och efter omkodning. Timeout, skannerfel, lagringsfel
@@ -115,7 +129,7 @@ ansikten eller personuppgifter i pixlar. Före aktivering krävs separat granskn
 och prov med riktig clamd och dess uppdaterade signaturer, Linux/ARM64 och Pi:ns
 resursgränser, dedikerad kvotbegränsad lagring och verifierad backup/återställning,
 samt bemannad snabb borttagning även av direktpublicerade åtgärdsbilder.
-Bildmoderering, missbruksrapportering, rate limits, eventuell diskrensning efter
+Bildmoderering, driftsatt missbruksrapportering, rate limits, eventuell diskrensning efter
 driftavbrott samt juridisk information och retentionsrutiner måste lösas och
 godkännas. Ingen publik uppladdning innan alla lanseringskrav är uppfyllda.
 

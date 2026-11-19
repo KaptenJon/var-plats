@@ -59,6 +59,18 @@ public sealed class ReportPhotoEntity
     public int Height { get; set; }
 }
 
+public sealed class ContentFlagEntity
+{
+    public Guid Id { get; set; }
+    public Guid ReportId { get; set; }
+    public Guid? ActionId { get; set; }
+    public Guid ReporterId { get; set; }
+    public FlagReason Reason { get; set; }
+    public string? Note { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? DismissedAt { get; set; }
+}
+
 public sealed class IdentityAccountActivity
 {
     public Guid UserId { get; set; }
@@ -84,6 +96,7 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
     public DbSet<ReportActionConfirmationEntity> ReportActionConfirmations => Set<ReportActionConfirmationEntity>();
     public DbSet<ReportPhotoEntity> ReportPhotos => Set<ReportPhotoEntity>();
     public DbSet<IdentityAccountActivity> IdentityAccountActivities => Set<IdentityAccountActivity>();
+    public DbSet<ContentFlagEntity> ContentFlags => Set<ContentFlagEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -202,6 +215,37 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
                 .HasForeignKey<ReportPhotoEntity>(photo => photo.ActionId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+        modelBuilder.Entity<ContentFlagEntity>(entity =>
+        {
+            entity.ToTable("content_flags", table =>
+            {
+                table.HasCheckConstraint("CK_content_flags_Reason", "\"Reason\" BETWEEN 0 AND 5");
+                table.HasCheckConstraint("CK_content_flags_Note",
+                    "\"Note\" IS NULL OR length(trim(\"Note\")) BETWEEN 1 AND 500");
+            });
+            entity.HasKey(flag => flag.Id);
+            entity.Property(flag => flag.Note).HasMaxLength(ContentFlagLimits.NoteMaxLength);
+            // One flag per account and item; NULLS NOT DISTINCT so report-level flags (no action) are unique too.
+            entity.HasIndex(flag => new { flag.ReportId, flag.ActionId, flag.ReporterId })
+                .IsUnique()
+                .AreNullsDistinct(false);
+            entity.HasIndex(flag => new { flag.DismissedAt, flag.CreatedAt });
+            entity.HasIndex(flag => new { flag.ReporterId, flag.CreatedAt });
+            entity.HasOne<ReportEntity>()
+                .WithMany()
+                .HasForeignKey(flag => flag.ReportId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+            entity.HasOne<ReportActionEntity>()
+                .WithMany()
+                .HasForeignKey(flag => flag.ActionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<IdentityUser<Guid>>()
+                .WithMany()
+                .HasForeignKey(flag => flag.ReporterId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+        });
         modelBuilder.Entity<IdentityAccountActivity>(entity =>
         {
             entity.ToTable("IdentityAccountActivity");
@@ -276,6 +320,25 @@ public sealed class DatabaseReportStore(
         var reports = await ReadAsync(db, query.AsNoTracking().OrderByDescending(report => report.CreatedAt)
             .ThenBy(report => report.Id).Take(MapArea.MaxResults + 1), cancellationToken);
         return ReportPage.FromLookahead(reports);
+    }
+
+    // ST_DWithin on geography measures in metres and uses the GiST index. A dense spot is capped before
+    // the final distance ordering, which happens in memory on the few remaining rows.
+    private const int NearbyCandidateLimit = 50;
+
+    public async Task<IReadOnlyList<NearbyReport>> ListNearAsync(double latitude, double longitude,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ReportProximity.IsValidLocation(latitude, longitude)) return [];
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        double radius = ReportProximity.RadiusMeters;
+        var query = db.Reports.FromSql($"""
+            SELECT * FROM reports
+            WHERE ST_DWithin("Location", ST_SetSRID(ST_MakePoint({longitude}, {latitude}), 4326)::geography, {radius})
+            """);
+        var candidates = await ReadAsync(db, query.AsNoTracking().OrderByDescending(report => report.CreatedAt)
+            .Take(NearbyCandidateLimit), cancellationToken);
+        return ReportProximity.Select(candidates, latitude, longitude);
     }
 
     public async Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default)
