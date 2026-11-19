@@ -322,6 +322,25 @@ public sealed class DatabaseReportStore(
         return ReportPage.FromLookahead(reports);
     }
 
+    // ST_DWithin on geography measures in metres and uses the GiST index. A dense spot is capped before
+    // the final distance ordering, which happens in memory on the few remaining rows.
+    private const int NearbyCandidateLimit = 50;
+
+    public async Task<IReadOnlyList<NearbyReport>> ListNearAsync(double latitude, double longitude,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ReportProximity.IsValidLocation(latitude, longitude)) return [];
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        double radius = ReportProximity.RadiusMeters;
+        var query = db.Reports.FromSql($"""
+            SELECT * FROM reports
+            WHERE ST_DWithin("Location", ST_SetSRID(ST_MakePoint({longitude}, {latitude}), 4326)::geography, {radius})
+            """);
+        var candidates = await ReadAsync(db, query.AsNoTracking().OrderByDescending(report => report.CreatedAt)
+            .Take(NearbyCandidateLimit), cancellationToken);
+        return ReportProximity.Select(candidates, latitude, longitude);
+    }
+
     public async Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
