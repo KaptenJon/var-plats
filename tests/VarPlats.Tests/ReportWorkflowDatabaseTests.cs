@@ -57,6 +57,7 @@ public sealed class ReportWorkflowDatabaseTests
         var localReport = await localStore.AddAsync(ReportTests.ValidDraft());
         Assert.Contains(await publicStore.ListAsync(), item => item.Id == localReport.Id);
         Assert.True(await localStore.RemoveAsync(localReport.Id));
+        await AssertMapAreaQueriesAsync(db, publicStore, legacy.Id);
 
         await using var web = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -438,6 +439,46 @@ public sealed class ReportWorkflowDatabaseTests
             new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/login?deleted=1", response.Headers.Location?.OriginalString);
+    }
+
+    private static async Task AssertMapAreaQueriesAsync(ReportDbContext db, DatabaseReportStore store, Guid stockholm)
+    {
+        static MapArea Area(double south, double west, double north, double east)
+        {
+            Assert.True(MapArea.TryCreate(south, west, north, east, out var area, out _));
+            return area;
+        }
+
+        // Indexed path, including a point just inside the southern edge where a great-circle edge would miss it.
+        Assert.Equal(stockholm, Assert.Single((await store.ListInAreaAsync(Area(59.32, 18.0, 59.34, 18.1))).Reports).Id);
+        Assert.Equal(stockholm, Assert.Single((await store.ListInAreaAsync(Area(59.3292, 15, 62, 25))).Reports).Id);
+        Assert.Empty((await store.ListInAreaAsync(Area(59.3294, 18.0, 59.34, 18.1))).Reports);
+        Assert.Empty((await store.ListInAreaAsync(Area(57.6, 11.9, 57.8, 12.1))).Reports);
+        // Wide, world-wide and antimeridian paths use the exact rectangle test.
+        Assert.Single((await store.ListInAreaAsync(Area(0, -10, 80, 170))).Reports);
+        Assert.Single((await store.ListInAreaAsync(Area(-85, -400, 85, 400))).Reports);
+        Assert.Empty((await store.ListInAreaAsync(Area(-20, 170, -10, 190))).Reports);
+
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO reports ("Id", "Title", "Description", "Category", "Location", "CreatedAt", "Status")
+            SELECT gen_random_uuid(), 'Syntetisk områdesrapport', 'Ett påhittat exempel utan personuppgifter.', 0,
+                ST_SetSRID(ST_Point(CASE WHEN n % 2 = 0 THEN 179.5 ELSE -179.5 END, -15), 4326)::geography,
+                '2026-11-02T00:00:00Z'::timestamptz + n * interval '1 minute', 0
+            FROM generate_series(1, 201) AS n;
+            """);
+        try
+        {
+            var crossing = await store.ListInAreaAsync(Area(-20, 170, -10, 190));
+            Assert.True(crossing.Truncated);
+            Assert.Equal(MapArea.MaxResults, crossing.Reports.Count);
+            Assert.Contains(crossing.Reports, report => report.Longitude > 0);
+            Assert.Contains(crossing.Reports, report => report.Longitude < 0);
+            Assert.False((await store.ListInAreaAsync(Area(-20, 179, -10, 179.9))).Truncated);
+        }
+        finally
+        {
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM reports WHERE \"Title\" = 'Syntetisk områdesrapport';");
+        }
     }
 
     private sealed class TestContextFactory(DbContextOptions<ReportDbContext> options) : IDbContextFactory<ReportDbContext>

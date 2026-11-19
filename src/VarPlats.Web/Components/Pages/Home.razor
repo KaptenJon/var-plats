@@ -122,7 +122,11 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
             else
             {
                 <div class="panel-heading"><h2>Platser att uppmärksamma</h2><span class="count">@VisibleReports.Count</span></div>
-                <p class="small">Senast rapporterade · högst 200 platser</p>
+                <p class="small">@(area is null ? "Senast rapporterade · högst 200 platser" : "I kartans vy · senast rapporterade först")</p>
+                @if (truncated)
+                {
+                    <p class="small area-notice" role="status">Visar de @MapArea.MaxResults senaste rapporterna i kartans vy. Zooma in för att se fler.</p>
+                }
                 <label for="search">Sök i rapporter</label>
                 <input id="search" type="search" @bind="search" @bind:event="oninput" @bind:after="SyncMap" maxlength="100" placeholder="Sök rubrik eller beskrivning" />
                 <label for="filter">Visa kategori</label>
@@ -132,6 +136,10 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                 @if (loading)
                 {
                     <p role="status">Hämtar rapporter…</p>
+                }
+                else if (reports.Count == 0 && area is not null)
+                {
+                    <p class="empty">Inga rapporter i kartans vy. Flytta kartan eller zooma ut för att se fler platser.</p>
                 }
                 else if (reports.Count == 0)
                 {
@@ -143,10 +151,10 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                 }
                 else
                 {
-                    <ul class="report-list">
+                    <ul class="report-list" aria-busy="@(refreshing ? "true" : "false")">
                         @foreach (var report in VisibleReports)
                         {
-                            <li>
+                            <li @key="report.Id">
                                 <button class="report-item @(selected == report.Id ? "selected" : "")" aria-pressed="@(selected == report.Id ? "true" : "false")" @onclick="() => Select(report)">
                                     <span class="report-symbol" aria-hidden="true">@(report.Category == ReportCategory.Litter ? "♧" : "◇")</span>
                                     <span><span class="report-category">@CategoryName(report.Category) · @ReportStatusText.Describe(report.Status, Mode.WorkflowEnabled)</span><strong>@report.Title</strong><span class="report-description">@report.Description</span></span>
@@ -174,7 +182,9 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     private IReadOnlyList<Report> reports = [];
     private ReportDraft draft = new();
     private PhotoSelection photoSelection = new(null, false);
-    private bool showForm, saving, loading = true;
+    private bool showForm, saving, loading = true, refreshing, truncated;
+    private MapArea? area;
+    private int loadVersion;
     private bool canReport, canModerate, canCheckOwn, canReview, removing, initialized;
     private string? error, status;
     private string filter = "", search = "";
@@ -208,6 +218,12 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
             module = await JS.InvokeAsync<IJSObjectReference>("import", "./map.js");
             callback = DotNetObjectReference.Create(this);
             await module.InvokeVoidAsync("initialize", "map", MapSettings.Value, callback);
+            var bounds = await module.InvokeAsync<double[]>("currentArea");
+            if (bounds.Length == 4 && MapArea.TryCreate(bounds[0], bounds[1], bounds[2], bounds[3], out var visible, out _))
+            {
+                area = visible;
+                await LoadReports(showLoading: false);
+            }
             await SyncMap();
         }
         catch (JSException exception)
@@ -218,17 +234,38 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         }
     }
 
-    private async Task LoadReports()
+    // Without a map area (map not loaded or failed) the list falls back to the latest reports overall.
+    // Area refreshes keep the current list visible so keyboard focus in the list is not lost.
+    private async Task LoadReports(bool showLoading = true)
     {
-        loading = true;
+        var version = ++loadVersion;
+        if (showLoading) loading = true; else refreshing = true;
         error = null;
-        try { reports = await Store.ListAsync(); }
+        try
+        {
+            IReadOnlyList<Report> loaded;
+            bool more;
+            if (area is { } current)
+            {
+                var page = await Store.ListInAreaAsync(current);
+                (loaded, more) = (page.Reports, page.Truncated);
+            }
+            else
+                (loaded, more) = (await Store.ListAsync(), false);
+            if (version != loadVersion) return;
+            reports = loaded;
+            truncated = more;
+        }
         catch (Exception exception) when (exception is Npgsql.NpgsqlException or InvalidOperationException)
         {
+            if (version != loadVersion) return;
             Logger.LogError(exception, "Rapporter kunde inte hämtas.");
             error = "Rapporter kunde inte hämtas. Kontrollera databasanslutningen och försök igen.";
         }
-        finally { loading = false; }
+        finally
+        {
+            if (version == loadVersion) loading = refreshing = false;
+        }
     }
 
     private async Task Reload() { await LoadReports(); await SyncMap(); }
@@ -269,6 +306,20 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         Logger.LogWarning("Kartleverantörens tiles kunde inte laddas.");
         error = "Kartbakgrunden kunde inte laddas. Rapportlistan och koordinatfälten fungerar fortfarande.";
         return InvokeAsync(StateHasChanged);
+    }
+    [JSInvokable]
+    public Task MapAreaChanged(double south, double west, double north, double east)
+    {
+        if (!MapArea.TryCreate(south, west, north, east, out var visible, out _)) return Task.CompletedTask;
+        return InvokeAsync(async () =>
+        {
+            area = visible;
+            var version = loadVersion + 1;
+            await LoadReports(showLoading: false);
+            if (version != loadVersion) return;
+            await SyncMap();
+            StateHasChanged();
+        });
     }
     [JSInvokable]
     public Task PickLocation(double latitude, double longitude)

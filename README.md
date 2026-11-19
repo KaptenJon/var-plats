@@ -47,7 +47,7 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 | Google/GitHub-inloggning med verifierad e-post, passkey/FIDO2 och uttrycklig kontolänkning; publik registrering aktiveras i den godkända Pi-releasen | Aktiverad publik åtgärdsrapportering och missbruksskydd |
 | Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd i förhandsversionen | Tvister, återtagande och skydd mot samordnad manipulation |
 | EF Core/PostGIS-lagring i lokalt utvecklingsläge | Poäng och organisationsbevakning |
-| Läs-API, livs-/beredskapskontroller, OTLP vid konfiguration | Betalning, native-app och offlinekartor |
+| Läs-API med kartvyfilter, livs-/beredskapskontroller, OTLP vid konfiguration | Betalning, native-app och offlinekartor |
 | Installerbart webb/PWA-skal; kräver nätanslutning | |
 
 Produktion är **endast läsning som standard** och kräver databas. Kod för

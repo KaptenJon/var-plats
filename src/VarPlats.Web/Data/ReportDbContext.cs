@@ -229,6 +229,55 @@ public sealed class DatabaseReportStore(
             .Take(200), cancellationToken);
     }
 
+    // Small areas go through the GiST index on the geography column. Geography polygon edges are great-circle
+    // arcs, so the envelope is densified and padded to cover the lat/lon rectangle; the exact rectangle test
+    // on ST_X/ST_Y then removes the padding. Very wide areas and the antimeridian use the exact test only.
+    private const double IndexMargin = 0.01;
+    private const double MaxIndexedLongitudeSpan = 90;
+    private const double MaxIndexedLatitudeSpan = 45;
+
+    public async Task<ReportPage> ListInAreaAsync(MapArea area, CancellationToken cancellationToken = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        double south = area.South, north = area.North, west = area.West, east = area.East;
+        IQueryable<ReportEntity> query;
+        if (area.CoversAllLongitudes)
+            query = db.Reports.FromSql($"""
+                SELECT * FROM reports
+                WHERE ST_Y("Location"::geometry) BETWEEN {south} AND {north}
+                """);
+        else if (area.CrossesAntimeridian)
+        {
+            var wrappedEast = east - 360;
+            query = db.Reports.FromSql($"""
+                SELECT * FROM reports
+                WHERE ST_Y("Location"::geometry) BETWEEN {south} AND {north}
+                  AND (ST_X("Location"::geometry) >= {west} OR ST_X("Location"::geometry) <= {wrappedEast})
+                """);
+        }
+        else if (east - west <= MaxIndexedLongitudeSpan && north - south <= MaxIndexedLatitudeSpan
+            && west - IndexMargin > -180 && east + IndexMargin < 180)
+        {
+            double margin = IndexMargin;
+            query = db.Reports.FromSql($"""
+                SELECT * FROM reports
+                WHERE ST_Intersects("Location", ST_Segmentize(
+                        ST_Expand(ST_MakeEnvelope({west}, {south}, {east}, {north}, 4326), {margin}), 0.5)::geography)
+                  AND ST_Y("Location"::geometry) BETWEEN {south} AND {north}
+                  AND ST_X("Location"::geometry) BETWEEN {west} AND {east}
+                """);
+        }
+        else
+            query = db.Reports.FromSql($"""
+                SELECT * FROM reports
+                WHERE ST_Y("Location"::geometry) BETWEEN {south} AND {north}
+                  AND ST_X("Location"::geometry) BETWEEN {west} AND {east}
+                """);
+        var reports = await ReadAsync(db, query.AsNoTracking().OrderByDescending(report => report.CreatedAt)
+            .ThenBy(report => report.Id).Take(MapArea.MaxResults + 1), cancellationToken);
+        return ReportPage.FromLookahead(reports);
+    }
+
     public async Task<Report?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);

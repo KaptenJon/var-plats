@@ -383,8 +383,22 @@ app.UseRateLimiter();
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapDefaultEndpoints();
-app.MapGet("/api/reports", async (IReportStore store, CancellationToken cancellationToken) =>
-    Results.Ok(await store.ListAsync(cancellationToken)));
+app.MapGet("/api/reports", async (HttpContext context, IReportStore store,
+    string? south, string? west, string? north, string? east, CancellationToken cancellationToken) =>
+{
+    if (south is null && west is null && north is null && east is null)
+        return Results.Ok(await store.ListAsync(cancellationToken));
+    static bool Parse(string? value, out double result) => double.TryParse(value,
+        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out result);
+    if (!Parse(south, out var s) || !Parse(west, out var w) || !Parse(north, out var n) || !Parse(east, out var e))
+        return Results.Problem("Ange south, west, north och east tillsammans som decimaltal.",
+            statusCode: StatusCodes.Status400BadRequest);
+    if (!MapArea.TryCreate(s, w, n, e, out var area, out var areaError))
+        return Results.Problem(areaError, statusCode: StatusCodes.Status400BadRequest);
+    var page = await store.ListInAreaAsync(area, cancellationToken);
+    context.Response.Headers["X-Reports-Truncated"] = page.Truncated ? "true" : "false";
+    return Results.Ok(page.Reports);
+});
 if (photoOptions.Enabled)
     app.MapPhotoEndpoints();
 if (authenticationEnabled)
