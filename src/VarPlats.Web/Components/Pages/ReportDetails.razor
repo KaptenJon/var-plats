@@ -5,6 +5,7 @@
 @using VarPlats.Web.Photos
 @inject IReportStore Store
 @inject ReportActionCommands Actions
+@inject ContentFlagCommands Flags
 @inject ReportingMode Mode
 @inject PhotoOptions PhotoSettings
 @inject PhotoUploadCommands PhotoUploads
@@ -47,6 +48,10 @@
             <img class="report-photo" src="@($"/photos/reports/{report.Id}")" alt="Uppladdad bild till rapporten" />
         }
         <p>Latitud: @report.Latitude.ToString("0.######", CultureInfo.InvariantCulture) · Longitud: @report.Longitude.ToString("0.######", CultureInfo.InvariantCulture)</p>
+        @if (canFlag)
+        {
+            @FlagControls(null, "Anmäl rapporten")
+        }
         <p class="small">Vår plats är inte en officiell kommunal felanmälan. Kontakta ansvarig aktör när det behövs.</p>
 
         <section aria-labelledby="actions-heading">
@@ -94,6 +99,10 @@
                                 @if (canRemove)
                                 {
                                     <button type="button" class="text-button" disabled="@busy" @onclick="() => Remove(action.Id)">Ta bort åtgärdsuppgiften</button>
+                                }
+                                @if (canFlag)
+                                {
+                                    @FlagControls(action.Id, "Anmäl åtgärdstexten")
                                 }
                             </article>
                         </li>
@@ -146,7 +155,10 @@
     private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>(), actionPhotoIds = new HashSet<Guid>();
     private Guid? loadedReportId;
     private int photoFieldVersion;
-    private bool canWrite, canRemove, loading = true, busy;
+    private bool canWrite, canRemove, canFlag, loading = true, busy;
+    // Which item has its flag form open: null = none, Guid.Empty = the report itself, otherwise an action id.
+    private Guid? flagTarget;
+    private ContentFlagDraft flagDraft = new();
     private string? error, status;
 
     protected override async Task OnParametersSetAsync()
@@ -157,8 +169,10 @@
             draft = new();
             photoSelection = new(null, false);
             photoFieldVersion++;
+            flagTarget = null;
         }
         var user = (await AuthenticationStateTask).User;
+        canFlag = Mode.CanFlag && ReportCommands.CanReport(user);
         canWrite = Mode.PublicWorkflow && ReportCommands.CanReport(user);
         canRemove = Mode.PublicWorkflow && ReportCommands.CanModerate(user);
         await Reload();
@@ -301,6 +315,68 @@
         {
             Logger.LogError(exception, "Åtgärdsuppgiften kunde inte tas bort.");
             error = "Åtgärdsuppgiften kunde inte tas bort. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private RenderFragment FlagControls(Guid? actionId, string buttonText) => __builder =>
+    {
+        var target = actionId ?? Guid.Empty;
+        var formId = $"flag-{target:N}";
+        if (flagTarget != target)
+        {
+            <button type="button" class="text-button" disabled="@busy" @onclick="() => OpenFlag(target)">@buttonText</button>
+            return;
+        }
+        <EditForm Model="flagDraft" OnValidSubmit="() => SubmitFlag(actionId)" FormName="@formId" class="flag-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label for="@($"{formId}-reason")">Vad är fel?</label>
+            <InputSelect id="@($"{formId}-reason")" @bind-Value="flagDraft.Reason">
+                @foreach (var reason in Enum.GetValues<FlagReason>())
+                {
+                    <option value="@reason">@ContentFlagText.Reason(reason)</option>
+                }
+            </InputSelect>
+            <label for="@($"{formId}-note")">Kommentar @(flagDraft.Reason == FlagReason.Other ? "(krävs för Annat)" : "(frivillig)")</label>
+            <InputTextArea id="@($"{formId}-note")" @bind-Value="flagDraft.Note" maxlength="@ContentFlagLimits.NoteMaxLength" rows="3" />
+            <p class="small">Skriv inga personuppgifter i kommentaren. Administratörer ser anmälan men inte vilket konto som skickade den.</p>
+            <button type="submit" class="text-button" disabled="@busy">@(busy ? "Skickar…" : "Skicka anmälan")</button>
+            <button type="button" class="text-button" disabled="@busy" @onclick="CloseFlag">Avbryt</button>
+        </EditForm>
+    };
+
+    private void OpenFlag(Guid target)
+    {
+        flagTarget = target;
+        flagDraft = new();
+        status = null;
+        error = null;
+    }
+
+    private void CloseFlag() => flagTarget = null;
+
+    private async Task SubmitFlag(Guid? actionId)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var user = (await AuthenticationStateTask).User;
+            var result = await Flags.FlagAsync(user, ReportId, actionId, flagDraft);
+            flagTarget = null;
+            flagDraft = new();
+            status = ContentFlagText.Result(result);
+            if (result == FlagResult.NotFound) await Reload();
+        }
+        catch (ValidationException exception) { error = exception.Message; }
+        catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att anmäla innehåll."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Anmälan kunde inte sparas.");
+            error = "Anmälan kunde inte skickas. Försök igen senare.";
         }
         finally { busy = false; }
     }

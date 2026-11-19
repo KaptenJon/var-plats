@@ -106,3 +106,5 @@ footer { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wr
 @media (prefers-reduced-motion: no-preference) {
   .report-item { transition: background-color 140ms ease-out; }
 }
+.flag-form { margin: 8px 0 16px; padding: 12px; border: 1px solid var(--line); background: var(--field); }
+.flag-form .text-button { min-height: 44px; }

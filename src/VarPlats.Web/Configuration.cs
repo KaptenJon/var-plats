@@ -3,10 +3,15 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace VarPlats.Web;
 
-public sealed record ReportingMode(bool Demo, bool LocalWrites, bool PublicWrites, bool WorkflowEnabled = false)
+public sealed record ReportingMode(
+    bool Demo, bool LocalWrites, bool PublicWrites, bool WorkflowEnabled = false, bool FlagsEnabled = false)
 {
     public bool PublicWorkflow => PublicWrites && WorkflowEnabled && !Demo && !LocalWrites;
     public bool CanWrite => Demo || LocalWrites || PublicWorkflow;
+    /// <summary>Admins can read the flag queue; requires the ContentFlags migration.</summary>
+    public bool FlagQueue => FlagsEnabled && WorkflowEnabled && !Demo && !LocalWrites;
+    /// <summary>Accounts can flag published content and admins can act on flags.</summary>
+    public bool CanFlag => FlagQueue && PublicWorkflow;
 }
 
 public sealed class MapOptions

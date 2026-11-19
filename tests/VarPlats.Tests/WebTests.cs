@@ -114,6 +114,14 @@ public sealed class WebTests
     }
 
     [Fact]
+    public void FlagsRequireTheWorkflow()
+    {
+        using var factory = CreateFactory("Production", new() { ["Reporting:FlagsEnabled"] = "true" });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Reporting:FlagsEnabled", exception.Message);
+    }
+
+    [Fact]
     public void WorkflowRequiresAuthentication()
     {
         using var factory = CreateFactory("Production", new() { ["Reporting:WorkflowEnabled"] = "true" });

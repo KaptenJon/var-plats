@@ -7,6 +7,8 @@
 @using VarPlats.Web.Photos
 @using VarPlats.Web.Data
 @inject ReportCommands Commands
+@inject ReportActionCommands Actions
+@inject ContentFlagCommands Flags
 @inject ReportingMode Mode
 @inject IPhotoReader Photos
 @inject IJSRuntime JS
@@ -74,6 +76,63 @@
             </ul>
         }
         <button type="button" class="text-button" disabled="@busy" @onclick="Reload">Uppdatera kön</button>
+
+        @if (Mode.FlagQueue)
+        {
+            <section aria-labelledby="flags-heading">
+                <h2 id="flags-heading">Anmält innehåll</h2>
+                <p>Publicerade rapporter och åtgärdstexter som konton har anmält. Vem som anmält visas inte. Ta bort innehållet om det bryter mot reglerna, annars avfärdar du anmälningarna.</p>
+                @if (!Mode.CanFlag)
+                {
+                    <p>Anmälningar kan läsas, men ändringar är avstängda.</p>
+                }
+                @if (flagError is not null)
+                {
+                    <p class="error" role="alert">@flagError</p>
+                }
+                @if (flagsLoading)
+                {
+                    <p role="status">Hämtar anmälningar…</p>
+                }
+                else if (flagged.Count == 0 && flagError is null)
+                {
+                    <p>Inga öppna anmälningar.</p>
+                }
+                else
+                {
+                    <p>Äldsta anmälan först · högst @ContentFlagLimits.QueueSize objekt åt gången</p>
+                    <ul class="report-list">
+                        @foreach (var item in flagged)
+                        {
+                            <li @key="(item.ReportId, item.ActionId)">
+                                <article style="overflow-wrap: anywhere">
+                                    <h3>@(item.ActionId is null ? "Rapport" : "Åtgärdstext") · @item.ReportTitle</h3>
+                                    <p>@FlagCountText(item.FlagCount) · första @item.FirstFlaggedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC</p>
+                                    <p class="action-description">@item.Text</p>
+                                    <p><strong>Anledningar:</strong> @string.Join("; ", item.Reasons.Select(ContentFlagText.Reason))</p>
+                                    @if (item.Notes.Count > 0)
+                                    {
+                                        <p><strong>Kommentarer:</strong></p>
+                                        <ul>
+                                            @foreach (var note in item.Notes)
+                                            {
+                                                <li class="action-description">@note</li>
+                                            }
+                                        </ul>
+                                    }
+                                    <p><a href="@($"/rapporter/{item.ReportId}")">Visa rapporten</a></p>
+                                    @if (Mode.CanFlag)
+                                    {
+                                        <button type="button" class="text-button" disabled="@busy" @onclick="() => RemoveFlagged(item)">@(item.ActionId is null ? "Ta bort rapporten" : "Ta bort åtgärdstexten")</button>
+                                        <button type="button" class="text-button" disabled="@busy" @onclick="() => Dismiss(item)">Avfärda anmälningarna</button>
+                                    }
+                                </article>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        }
     }
     <p><a href="/">Tillbaka till kartan</a></p>
 </main>
@@ -81,8 +140,9 @@
 @code {
     private IReadOnlyList<ReportSubmission> submissions = [];
     private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>();
-    private bool allowed, loading, busy;
-    private string? error, status;
+    private IReadOnlyList<FlaggedContent> flagged = [];
+    private bool allowed, loading, busy, flagsLoading;
+    private string? error, status, flagError;
 
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
@@ -119,7 +179,82 @@
             error = "Granskningskön kunde inte hämtas. Försök igen senare.";
         }
         finally { loading = false; }
+        await ReloadFlags();
     }
+
+    // Separate from the submission queue so a missing flags table cannot hide pending submissions.
+    private async Task ReloadFlags()
+    {
+        if (!Mode.FlagQueue) return;
+        flagsLoading = true;
+        flagError = null;
+        try { flagged = await Flags.ListOpenAsync((await AuthenticationStateTask).User); }
+        catch (UnauthorizedAccessException)
+        {
+            flagged = [];
+            flagError = "Du har inte behörighet att visa anmälningar.";
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Anmälningar kunde inte hämtas.");
+            flagged = [];
+            flagError = "Anmälningar kunde inte hämtas. Kontrollera att migrationen ContentFlags är tillämpad.";
+        }
+        finally { flagsLoading = false; }
+    }
+
+    private async Task Dismiss(FlaggedContent item)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("confirm", "Avfärda anmälningarna? Innehållet ligger kvar och samma konton kan inte anmäla det igen."))
+                return;
+            var count = await Flags.DismissAsync((await AuthenticationStateTask).User, item.ReportId, item.ActionId);
+            await ReloadFlags();
+            status = count == 0 ? "Anmälningarna var redan hanterade. Listan har uppdaterats." : "Anmälningarna har avfärdats.";
+        }
+        catch (UnauthorizedAccessException) { error = "Endast administratörer kan hantera anmälningar."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException or JSException)
+        {
+            Logger.LogError(exception, "Anmälningar kunde inte avfärdas.");
+            error = "Anmälningarna kunde inte avfärdas. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task RemoveFlagged(FlaggedContent item)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var question = item.ActionId is null
+                ? "Ta bort rapporten permanent, med åtgärder, bekräftelser och anmälningar? Detta kan inte ångras."
+                : "Ta bort åtgärdstexten permanent, med bekräftelser och anmälningar? Detta kan inte ångras.";
+            if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+            var user = (await AuthenticationStateTask).User;
+            var removed = item.ActionId is { } actionId
+                ? await Actions.RemoveAsync(user, item.ReportId, actionId)
+                : await Commands.RemoveAsync(user, item.ReportId);
+            await ReloadFlags();
+            status = removed ? "Innehållet har tagits bort." : "Innehållet fanns inte längre. Listan har uppdaterats.";
+        }
+        catch (UnauthorizedAccessException) { error = "Endast administratörer kan ta bort innehåll."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException or JSException)
+        {
+            Logger.LogError(exception, "Anmält innehåll kunde inte tas bort.");
+            error = "Innehållet kunde inte tas bort. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private static string FlagCountText(int count) => count == 1 ? "1 anmälan" : $"{count} anmälningar";
 
     private async Task Decide(Guid id, ReportReviewStatus decision)
     {

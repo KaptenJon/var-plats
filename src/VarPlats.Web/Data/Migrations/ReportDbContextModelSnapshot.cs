@@ -18,7 +18,7 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261108164953_ReportPhotos";
+    public override string LastMigrationId => "20261119061342_ContentFlags";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -273,6 +273,55 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                 b.HasKey("UserId", "LoginProvider", "Name");
 
                 b.ToTable("AspNetUserTokens");
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ContentFlagEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("ActionId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("DismissedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Note")
+                    .HasMaxLength(500)
+                    .HasColumnType("character varying(500)");
+
+                b.Property<int>("Reason")
+                    .HasColumnType("integer");
+
+                b.Property<Guid>("ReportId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ReporterId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ActionId");
+
+                b.HasIndex("DismissedAt", "CreatedAt");
+
+                b.HasIndex("ReporterId", "CreatedAt");
+
+                var index = b.HasIndex("ReportId", "ActionId", "ReporterId")
+                    .IsUnique();
+
+                NpgsqlIndexBuilderExtensions.AreNullsDistinct(index, false);
+
+                b.ToTable("content_flags", t =>
+                    {
+                        t.HasCheckConstraint("CK_content_flags_Note", "\"Note\" IS NULL OR length(trim(\"Note\")) BETWEEN 1 AND 500");
+
+                        t.HasCheckConstraint("CK_content_flags_Reason", "\"Reason\" BETWEEN 0 AND 5");
+                    });
             });
 
         modelBuilder.Entity("VarPlats.Web.Data.IdentityAccountActivity", b =>
@@ -562,6 +611,26 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                 b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
                     .WithMany()
                     .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ContentFlagEntity", b =>
+            {
+                b.HasOne("VarPlats.Web.Data.ReportActionEntity", null)
+                    .WithMany()
+                    .HasForeignKey("ActionId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("VarPlats.Web.Data.ReportEntity", null)
+                    .WithMany()
+                    .HasForeignKey("ReportId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithMany()
+                    .HasForeignKey("ReporterId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
             });

@@ -59,6 +59,18 @@ public sealed class ReportPhotoEntity
     public int Height { get; set; }
 }
 
+public sealed class ContentFlagEntity
+{
+    public Guid Id { get; set; }
+    public Guid ReportId { get; set; }
+    public Guid? ActionId { get; set; }
+    public Guid ReporterId { get; set; }
+    public FlagReason Reason { get; set; }
+    public string? Note { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? DismissedAt { get; set; }
+}
+
 public sealed class IdentityAccountActivity
 {
     public Guid UserId { get; set; }
@@ -84,6 +96,7 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
     public DbSet<ReportActionConfirmationEntity> ReportActionConfirmations => Set<ReportActionConfirmationEntity>();
     public DbSet<ReportPhotoEntity> ReportPhotos => Set<ReportPhotoEntity>();
     public DbSet<IdentityAccountActivity> IdentityAccountActivities => Set<IdentityAccountActivity>();
+    public DbSet<ContentFlagEntity> ContentFlags => Set<ContentFlagEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -201,6 +214,37 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
                 .WithOne()
                 .HasForeignKey<ReportPhotoEntity>(photo => photo.ActionId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ContentFlagEntity>(entity =>
+        {
+            entity.ToTable("content_flags", table =>
+            {
+                table.HasCheckConstraint("CK_content_flags_Reason", "\"Reason\" BETWEEN 0 AND 5");
+                table.HasCheckConstraint("CK_content_flags_Note",
+                    "\"Note\" IS NULL OR length(trim(\"Note\")) BETWEEN 1 AND 500");
+            });
+            entity.HasKey(flag => flag.Id);
+            entity.Property(flag => flag.Note).HasMaxLength(ContentFlagLimits.NoteMaxLength);
+            // One flag per account and item; NULLS NOT DISTINCT so report-level flags (no action) are unique too.
+            entity.HasIndex(flag => new { flag.ReportId, flag.ActionId, flag.ReporterId })
+                .IsUnique()
+                .AreNullsDistinct(false);
+            entity.HasIndex(flag => new { flag.DismissedAt, flag.CreatedAt });
+            entity.HasIndex(flag => new { flag.ReporterId, flag.CreatedAt });
+            entity.HasOne<ReportEntity>()
+                .WithMany()
+                .HasForeignKey(flag => flag.ReportId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+            entity.HasOne<ReportActionEntity>()
+                .WithMany()
+                .HasForeignKey(flag => flag.ActionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<IdentityUser<Guid>>()
+                .WithMany()
+                .HasForeignKey(flag => flag.ReporterId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
         });
         modelBuilder.Entity<IdentityAccountActivity>(entity =>
         {

@@ -181,7 +181,13 @@ public sealed class ReportWorkflowDatabaseTests
         using var photoScenario = new PhotoWorkflowDatabaseScenario(contexts, firstMember, secondMember, admin);
         await photoScenario.BeforeAccountDeletionAsync();
 
+        await db.GetService<IMigrator>().MigrateAsync("20261119061342_ContentFlags");
+        await CheckContentFlagsAsync(contexts, legacy.Id, approved.Id, pending.Id, firstAuthorActionId,
+            firstMember, secondMember, admin, firstUser.Id, secondUser.Id);
+
         await DeleteAccountViaEndpoint(connectionString, firstUser.Id, legacy.Id);
+        await using (var check = contexts.CreateDbContext())
+            Assert.False(await check.ContentFlags.AnyAsync(flag => flag.ReporterId == firstUser.Id));
         await using (var check = contexts.CreateDbContext())
         {
             var retained = await check.ReportSubmissions.AsNoTracking().SingleAsync(item => item.Id == approved.Id);
@@ -234,6 +240,93 @@ public sealed class ReportWorkflowDatabaseTests
             Assert.False(await check.ReportSubmissions.AnyAsync(item => item.Id == approved.Id));
             Assert.False(await check.ReportActions.AnyAsync(item => item.Id == lastAction.Id));
         }
+    }
+
+    private static async Task CheckContentFlagsAsync(
+        TestContextFactory contexts, Guid legacyId, Guid approvedId, Guid pendingId, Guid actionId,
+        ClaimsPrincipal firstMember, ClaimsPrincipal secondMember, ClaimsPrincipal admin,
+        Guid firstUserId, Guid secondUserId)
+    {
+        var mode = new ReportingMode(false, false, true, true, true);
+        var flags = new ContentFlagCommands(mode, new DatabaseContentFlagStore(contexts, mode),
+            SyntheticReportAccountAccess.Instance);
+        static ContentFlagDraft Draft(FlagReason reason, string? note = null) => new() { Reason = reason, Note = note };
+
+        Assert.Equal(FlagResult.Flagged, await flags.FlagAsync(firstMember, approvedId, null, Draft(FlagReason.PersonalData)));
+        Assert.Equal(FlagResult.AlreadyFlagged, await flags.FlagAsync(firstMember, approvedId, null, Draft(FlagReason.Spam)));
+        Assert.Equal(FlagResult.Flagged, await flags.FlagAsync(firstMember, approvedId, actionId, Draft(FlagReason.Offensive)));
+        Assert.Equal(FlagResult.Flagged, await flags.FlagAsync(secondMember, approvedId, null,
+            Draft(FlagReason.Other, "  Syntetisk kommentar utan personuppgifter.  ")));
+        // Unpublished submissions and actions on another report cannot be flagged.
+        Assert.Equal(FlagResult.NotFound, await flags.FlagAsync(firstMember, pendingId, null, Draft(FlagReason.Spam)));
+        Assert.Equal(FlagResult.NotFound, await flags.FlagAsync(firstMember, legacyId, actionId, Draft(FlagReason.Spam)));
+
+        var queue = await flags.ListOpenAsync(admin);
+        Assert.Equal(2, queue.Count);
+        var reportItem = Assert.Single(queue, item => item.ActionId is null);
+        Assert.Equal(2, reportItem.FlagCount);
+        Assert.Equal([FlagReason.PersonalData, FlagReason.Other], reportItem.Reasons);
+        Assert.Equal("Syntetisk kommentar utan personuppgifter.", Assert.Single(reportItem.Notes));
+        var actionItem = Assert.Single(queue, item => item.ActionId == actionId);
+        Assert.Equal(1, actionItem.FlagCount);
+        Assert.Equal(approvedId, actionItem.ReportId);
+        var serializedQueue = JsonSerializer.Serialize(queue);
+        Assert.DoesNotContain(firstUserId.ToString(), serializedQueue, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(secondUserId.ToString(), serializedQueue, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Equal(2, await flags.DismissAsync(admin, approvedId, null));
+        Assert.Equal(0, await flags.DismissAsync(admin, approvedId, null));
+        Assert.Equal(actionId, Assert.Single(await flags.ListOpenAsync(admin)).ActionId);
+        Assert.Equal(FlagResult.AlreadyFlagged, await flags.FlagAsync(firstMember, approvedId, null, Draft(FlagReason.Spam)));
+
+        await using var db = contexts.CreateDbContext();
+        await Assert.ThrowsAsync<DbUpdateException>(async () =>
+        {
+            db.ContentFlags.Add(new ContentFlagEntity
+            {
+                Id = Guid.NewGuid(),
+                ReportId = approvedId,
+                ReporterId = secondUserId,
+                Reason = FlagReason.Spam,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync();
+        });
+        db.ChangeTracker.Clear();
+
+        // Daily limit: fill the second account up to the limit on temporary synthetic reports.
+        var limit = ContentFlagLimits.PerAccountPerDay;
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO reports ("Id", "Title", "Description", "Category", "Location", "CreatedAt", "Status")
+            SELECT gen_random_uuid(), 'Syntetisk anmälningsrapport', 'Ett påhittat exempel utan personuppgifter.', 0,
+                ST_SetSRID(ST_Point(11.97, 57.7), 4326)::geography, now(), 0
+            FROM generate_series(1, {limit});
+            """);
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO content_flags ("Id", "ReportId", "ReporterId", "Reason", "CreatedAt")
+            SELECT gen_random_uuid(), r."Id", {secondUserId}, 3, now()
+            FROM reports r WHERE r."Title" = 'Syntetisk anmälningsrapport'
+            LIMIT {limit - 1};
+            """);
+        Assert.Equal(FlagResult.LimitReached, await flags.FlagAsync(secondMember, legacyId, null, Draft(FlagReason.Spam)));
+        await db.Database.ExecuteSqlAsync($"""
+            UPDATE content_flags SET "CreatedAt" = now() - interval '2 days' WHERE "ReporterId" = {secondUserId};
+            """);
+        Assert.Equal(FlagResult.Flagged, await flags.FlagAsync(secondMember, legacyId, null, Draft(FlagReason.Spam)));
+
+        // Deleting a report or an action removes its flags.
+        await db.Database.ExecuteSqlAsync($"""DELETE FROM reports WHERE "Title" = 'Syntetisk anmälningsrapport';""");
+        var temporaryAction = Guid.NewGuid();
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO report_actions ("Id", "ReportId", "AuthorId", "Description", "CreatedAt")
+            VALUES ({temporaryAction}, {legacyId}, NULL, 'Syntetisk åtgärd för anmälningstest.', now());
+            """);
+        Assert.Equal(FlagResult.Flagged, await flags.FlagAsync(secondMember, legacyId, temporaryAction, Draft(FlagReason.Spam)));
+        await db.Database.ExecuteSqlAsync($"""DELETE FROM report_actions WHERE "Id" = {temporaryAction};""");
+        Assert.False(await db.ContentFlags.AnyAsync(flag => flag.ActionId == temporaryAction));
+        // Left: the dismissed flag on the approved report and the one on the legacy report.
+        Assert.Equal(2, await db.ContentFlags.CountAsync(flag => flag.ReporterId == secondUserId));
+        await db.ContentFlags.Where(flag => flag.ReportId == legacyId).ExecuteDeleteAsync();
     }
 
     private static async Task CheckCurrentAccountAccess(ServiceProvider provider)
