@@ -27,6 +27,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # CodeQL refuses to run when init and analyze are on different versions.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
   - package-ecosystem: docker
     directory: /deploy
     schedule:
