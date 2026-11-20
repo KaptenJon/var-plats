@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Radzen;
 using VarPlats.Core;
 using VarPlats.ServiceDefaults;
@@ -55,6 +56,9 @@ if (confirmationWithdrawalEnabled && !workflowEnabled)
 
 var reportingMode = new ReportingMode(demo, localWrites, publicWrites, workflowEnabled, flagsEnabled,
     archiveEnabled, confirmationWithdrawalEnabled);
+var rateLimitOptions = builder.Configuration.GetSection("Reporting:RateLimits").Get<RateLimitOptions>()
+    ?? new RateLimitOptions();
+rateLimitOptions.Validate();
 var photoOptions = builder.Configuration.GetSection("Photos").Get<PhotoOptions>() ?? new PhotoOptions();
 photoOptions.Validate(reportingMode, authenticationEnabled,
     builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot"));
@@ -103,6 +107,9 @@ if (authenticationEnabled)
 
 builder.Services.AddSingleton(reportingMode);
 builder.Services.AddSingleton(photoOptions);
+builder.Services.AddSingleton(rateLimitOptions);
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<WriteRateLimiter>();
 builder.Services.AddScoped<ReportCommands>();
 builder.Services.AddScoped<ReportActionCommands>();
 builder.Services.AddScoped<ContentFlagCommands>();
@@ -226,6 +233,29 @@ else
 builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
 {
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, cancellationToken) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        return ValueTask.CompletedTask;
+    };
+    if (rateLimitOptions.Enabled)
+    {
+        // Partitioned by the address the server sees. Behind the Pi's Caddy that is the proxy, because
+        // X-Forwarded-For is deliberately not trusted, so in production this acts as a shared API cap.
+        options.AddPolicy("reports-api", context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = rateLimitOptions.Api.PermitLimit,
+                    Window = rateLimitOptions.Api.Window,
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                }));
+    }
     options.AddPolicy("account-email", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -398,7 +428,7 @@ app.UseRateLimiter();
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapDefaultEndpoints();
-app.MapGet("/api/reports", async (HttpContext context, IReportStore store,
+var reportsApi = app.MapGet("/api/reports", async (HttpContext context, IReportStore store,
     string? south, string? west, string? north, string? east, CancellationToken cancellationToken) =>
 {
     if (south is null && west is null && north is null && east is null)
@@ -414,6 +444,8 @@ app.MapGet("/api/reports", async (HttpContext context, IReportStore store,
     context.Response.Headers["X-Reports-Truncated"] = page.Truncated ? "true" : "false";
     return Results.Ok(page.Reports);
 });
+if (rateLimitOptions.Enabled)
+    reportsApi.RequireRateLimiting("reports-api");
 if (photoOptions.Enabled)
     app.MapPhotoEndpoints();
 if (authenticationEnabled)

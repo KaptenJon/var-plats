@@ -105,6 +105,23 @@ public sealed class ConfirmationWithdrawalTests
     }
 
     [Fact]
+    public async Task WithdrawalCountsAgainstTheConfirmationRateLimit()
+    {
+        var store = new ReportWorkflowTestStore();
+        var (reportId, actionId, confirmer) = await ConfirmedActionAsync(store);
+        var limiter = WriteRateLimitTests.Limiter(new WriteRateLimitTests.ManualTime(),
+            options => options.Confirmations = new() { PermitLimit = 1, WindowSeconds = 600 });
+        var commands = new ReportActionCommands(Enabled, store, accountAccess: SyntheticReportAccountAccess.Instance,
+            rateLimiter: limiter);
+
+        Assert.Equal(ConfirmationWithdrawalResult.Withdrawn,
+            await commands.WithdrawConfirmationAsync(confirmer, reportId, actionId));
+        var exception = await Assert.ThrowsAsync<WriteRateLimitException>(() =>
+            commands.WithdrawConfirmationAsync(confirmer, reportId, actionId));
+        Assert.Equal(WriteKind.Confirmation, exception.Kind);
+    }
+
+    [Fact]
     public async Task WithdrawalDatabaseStoreRejectsDisabledModesBeforeConnecting()
     {
         var options = new DbContextOptionsBuilder<ReportDbContext>()

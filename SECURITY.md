@@ -99,8 +99,25 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   Kontoborttagning sätter historikens kontolänk till null men behåller raden;
   borttagning av åtgärd eller rapport kaskadraderar historiken. När
   inställningen är av läses inte historiktabellen, och då hindras inte heller
-  en ny bekräftelse efter ett tidigare återtagande. Detta ersätter inte skydd
-  mot samordnade konton eller en tvistprocess.
+  en ny bekräftelse efter ett tidigare återtagande. När skrivgränser är på
+  räknas återtaganden mot samma gräns som bekräftelser. Detta ersätter inte
+  skydd mot samordnade konton eller en tvistprocess.
+- Skrivgränser (`Reporting:RateLimits:Enabled=false` som standard) kräver
+  ingen migration. När de är på räknar en minnesbaserad begränsare per konto-id
+  och kommando i ett fast tidsfönster: rapportinskick, åtgärdsuppgifter,
+  bekräftelser, anmälningar och bilduppladdningar (en bild räknas både som bild
+  och som rapport eller åtgärd). Kontrollen görs i kommandolagret som
+  Blazor-komponenterna anropar direkt, efter behörighets- och
+  valideringskontroll men före lagring och bildbehandling, så HTTP-middleware
+  behövs inte för skrivningarna. Vid nådd gräns sparas ingenting och
+  användaren får ett svenskt textmeddelande, inte bara en färg. Loggen anger
+  bara kommandotyp, aldrig konto-id, e-post eller innehåll. `GET /api/reports`
+  begränsas per klientadress med ASP.NET Core:s middleware och svarar `429`.
+  Bakom Caddy blir det en gemensam gräns, eftersom `X-Forwarded-For` medvetet
+  ignoreras. Avvisade anrop från den befintliga e-postgränsen svarar nu också
+  `429` i stället för `503`. Räknarna försvinner vid omstart och delas inte
+  mellan instanser; de är ett skydd mot översvämning från ett konto, inte mot
+  många konton. Anmälningarnas dygnsgräns i databasen gäller fortfarande.
 - Bildkoden kontrollerar byteantal, verklig JPEG/PNG, dimensioner och pixlar,
   avkodar/ritar om utan inmetadata och kräver ett rent svar från en privat lokal
   clamd-socket både före och efter omkodning. Timeout, skannerfel, lagringsfel
@@ -145,7 +162,7 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
 Rapporter kan avslöja hemadress, rörelsemönster, ansikten och tredje person.
 Plats är inte automatiskt ofarlig bara för att den visas på en karta.
 Även med de nuvarande rollkontrollerna får publika skrivningar inte aktiveras
-förrän integritets-/retentionsbeslut, rate limits, lagringskvoter, spam-/Sybil-
+förrän integritets-/retentionsbeslut, aktiverade och avvägda rate limits, lagringskvoter, spam-/Sybil-
 skydd, bemannad granskningskö, snabb hantering av direktpublicerade åtgärder,
 granskningshistorik och en återställningsplan är klara.
 Innehåll måste kunna döljas/raderas snabbt. Ingen rapportörsidentitet sparas i

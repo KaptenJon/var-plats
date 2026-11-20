@@ -6,7 +6,7 @@ namespace VarPlats.Web;
 
 public sealed class ReportActionCommands(
     ReportingMode mode, IReportActionStore? store = null, IPhotoCleanup? photos = null,
-    IReportAccountAccess? accountAccess = null)
+    IReportAccountAccess? accountAccess = null, WriteRateLimiter? rateLimiter = null)
 {
     public async Task<IReadOnlyList<ReportAction>> ListAsync(
         ClaimsPrincipal viewer, Guid reportId, CancellationToken cancellationToken = default)
@@ -25,6 +25,7 @@ public sealed class ReportActionCommands(
         var accountId = await RequireWriteAsync(user, cancellationToken);
         ArgumentNullException.ThrowIfNull(draft);
         draft.ValidatedDescription();
+        rateLimiter?.Acquire(accountId, WriteKind.Action);
         return await Store().AddAsync(reportId, accountId, draft, cancellationToken);
     }
 
@@ -32,6 +33,7 @@ public sealed class ReportActionCommands(
         ClaimsPrincipal user, Guid reportId, Guid actionId, CancellationToken cancellationToken = default)
     {
         var accountId = await RequireWriteAsync(user, cancellationToken);
+        rateLimiter?.Acquire(accountId, WriteKind.Confirmation);
         return await Store().ConfirmAsync(reportId, actionId, accountId, cancellationToken);
     }
 
@@ -45,6 +47,8 @@ public sealed class ReportActionCommands(
         if (!mode.CanWithdrawConfirmation)
             throw new InvalidOperationException("Återtagande av bekräftelser är inte aktiverat.");
         var accountId = await RequireWriteAsync(user, cancellationToken);
+        // Withdrawals count against the same limit as confirmations.
+        rateLimiter?.Acquire(accountId, WriteKind.Confirmation);
         return await Store().WithdrawConfirmationAsync(reportId, actionId, accountId, cancellationToken);
     }
 

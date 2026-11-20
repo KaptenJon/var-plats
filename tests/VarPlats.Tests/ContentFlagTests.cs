@@ -137,6 +137,23 @@ public sealed class ContentFlagTests
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticated ? "test" : null));
     }
 
+    [Fact]
+    public async Task FlagsAreRateLimitedPerAccount()
+    {
+        var store = new RecordingFlagStore();
+        var commands = new ContentFlagCommands(Enabled, store, SyntheticReportAccountAccess.Instance,
+            WriteRateLimitTests.Limiter(new WriteRateLimitTests.ManualTime(),
+                options => options.Flags = new() { PermitLimit = 1, WindowSeconds = 600 }));
+        var member = Guid.NewGuid();
+
+        await commands.FlagAsync(Account("Member", member), Guid.NewGuid(), null, Draft());
+        var exception = await Assert.ThrowsAsync<WriteRateLimitException>(() =>
+            commands.FlagAsync(Account("Member", member), Guid.NewGuid(), null, Draft()));
+        Assert.Contains("anmälningar", exception.Message);
+        await commands.FlagAsync(Account("Member"), Guid.NewGuid(), null, Draft());
+        Assert.Equal(2, store.Flags.Count);
+    }
+
     private sealed class RecordingFlagStore : IContentFlagStore
     {
         public List<(Guid ReportId, Guid? ActionId, Guid AccountId)> Flags { get; } = [];
