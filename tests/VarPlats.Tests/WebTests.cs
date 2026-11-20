@@ -108,6 +108,7 @@ public sealed class WebTests
         Assert.Contains("Operatör och kontakt", terms);
         Assert.Contains("inte en officiell kommunal felanmälan", terms);
         Assert.Contains("betalning är avstängda", terms);
+        Assert.Contains("Du ansvarar själv för att bilder och texter du laddar upp följer reglerna", terms);
     }
 
     [Fact]
