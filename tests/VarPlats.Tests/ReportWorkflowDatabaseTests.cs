@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -255,6 +256,105 @@ public sealed class ReportWorkflowDatabaseTests
             Assert.False(await check.ReportSubmissions.AnyAsync(item => item.Id == approved.Id));
             Assert.False(await check.ReportActions.AnyAsync(item => item.Id == lastAction.Id));
         }
+
+        await CheckDevAccountsAsync(connectionString);
+    }
+
+    private static async Task CheckDevAccountsAsync(string connectionString)
+    {
+        WebApplicationFactory<Program> CreateDevFactory() => new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("ConnectionStrings:varplats", connectionString);
+            builder.UseSetting("Authentication:Enabled", "true");
+            builder.UseSetting("Authentication:DevAccounts", "true");
+            builder.UseSetting("Reporting:WorkflowEnabled", "true");
+            builder.UseSetting("Reporting:PublicWrites", "true");
+            builder.ConfigureServices(services => services.AddSingleton<IStartupFilter>(new LoopbackClientFilter()));
+        });
+
+        // A loopback host alone is not enough: without the explicit marker nothing is migrated or seeded.
+        await using (var unmarked = CreateDevFactory())
+        {
+            var refused = Assert.Throws<InvalidOperationException>(() => unmarked.CreateClient());
+            Assert.Contains(DevAccounts.LocalDatabaseMarker, refused.Message);
+        }
+        await using (var marking = new NpgsqlConnection(connectionString))
+        {
+            await marking.OpenAsync();
+            await using var comment = new NpgsqlCommand(
+                $"COMMENT ON DATABASE varplats_workflow_test IS '{DevAccounts.LocalDatabaseMarker}'", marking);
+            await comment.ExecuteNonQueryAsync();
+        }
+
+        // Starting twice checks that migration and seeding are repeatable on an existing database.
+        await using (var first = CreateDevFactory())
+            first.CreateClient().Dispose();
+        await using var web = CreateDevFactory();
+        using var client = web.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true,
+            BaseAddress = new Uri("https://localhost")
+        });
+        var login = WebUtility.HtmlDecode(await client.GetStringAsync("/login"));
+        Assert.Contains("Testkonton (endast lokalt)", login);
+        Assert.DoesNotContain("Fortsätt med GitHub", login);
+        Assert.All(DevAccounts.All, account => Assert.Contains(account.Email, login));
+        var token = Regex.Match(login, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        Assert.False(string.IsNullOrWhiteSpace(token));
+        Task<HttpResponseMessage> SignIn(string key) => client.PostAsync("/dev/signin",
+            new FormUrlEncodedContent([new("account", key), new("__RequestVerificationToken", token)]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync("/dev/signin",
+            new FormUrlEncodedContent([new("account", "admin")]))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await SignIn("okänt-konto")).StatusCode);
+        var locked = await SignIn("sparrad");
+        Assert.Equal(HttpStatusCode.Redirect, locked.StatusCode);
+        Assert.Equal("/login?error=locked", locked.Headers.Location?.OriginalString);
+        var admin = await SignIn("admin");
+        Assert.Equal(HttpStatusCode.Redirect, admin.StatusCode);
+        Assert.Equal("/", admin.Headers.Location?.OriginalString);
+        var moderation = WebUtility.HtmlDecode(await client.GetStringAsync("/moderering"));
+        Assert.Contains("Granskningskö", moderation);
+        Assert.DoesNotContain("Endast administratörer", moderation);
+
+        await using var scope = web.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser<Guid>>>();
+        foreach (var account in DevAccounts.All)
+        {
+            var user = await users.FindByEmailAsync(account.Email);
+            Assert.NotNull(user);
+            Assert.True(user.EmailConfirmed);
+            Assert.Equal(account.Role is null ? [] : [account.Role], await users.GetRolesAsync(user));
+            Assert.Equal(account.Locked, await users.IsLockedOutAsync(user));
+        }
+
+        // Test accounts never answer anyone but the local machine.
+        await using var remote = CreateDevFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            services.AddSingleton<IStartupFilter>(new LoopbackClientFilter(IPAddress.Parse("192.0.2.10")))));
+        using var remoteClient = remote.CreateClient();
+        Assert.Equal(HttpStatusCode.Forbidden, (await remoteClient.GetAsync("/login")).StatusCode);
+        // A reverse proxy on the same host connects via loopback but adds forwarding headers.
+        foreach (var header in new[] { "X-Forwarded-For", "X-Forwarded-Proto", "Forwarded", "X-Real-IP" })
+        {
+            using var proxied = new HttpRequestMessage(HttpMethod.Get, "/login");
+            proxied.Headers.TryAddWithoutValidation(header, header == "Forwarded" ? "for=192.0.2.10" : "192.0.2.10");
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(proxied)).StatusCode);
+        }
+    }
+
+    private sealed class LoopbackClientFilter(IPAddress? address = null) : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((context, nextMiddleware) =>
+            {
+                context.Connection.RemoteIpAddress = address ?? IPAddress.Loopback;
+                return nextMiddleware();
+            });
+            next(app);
+        };
     }
 
     private static async Task CheckContentFlagsAsync(

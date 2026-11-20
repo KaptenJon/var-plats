@@ -119,6 +119,64 @@ public sealed class WebTests
     }
 
     [Fact]
+    public void DevAccountsAreOnlyAllowedInDevelopment()
+    {
+        using var factory = CreateFactory("Production", new()
+        {
+            ["Authentication:Enabled"] = "true",
+            ["Authentication:DevAccounts"] = "true",
+            ["ConnectionStrings:varplats"] = "Host=127.0.0.1;Database=unused"
+        });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("endast tillåtet i Development", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("false", null, null)]
+    [InlineData("true", "Reporting:LocalWrites", "true")]
+    public void DevAccountsRequireAuthenticationAndNoLocalWrites(string authentication, string? key, string? value)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["Authentication:Enabled"] = authentication,
+            ["Authentication:DevAccounts"] = "true",
+            ["ConnectionStrings:varplats"] = "Host=127.0.0.1;Database=unused"
+        };
+        if (key is not null)
+            settings[key] = value;
+        using var factory = CreateFactory("Development", settings);
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Authentication:DevAccounts kräver Authentication:Enabled", exception.Message);
+    }
+
+    [Fact]
+    public void DevAccountsRequireALocalDatabase()
+    {
+        using var factory = CreateFactory("Development", new()
+        {
+            ["Authentication:Enabled"] = "true",
+            ["Authentication:DevAccounts"] = "true",
+            ["ConnectionStrings:varplats"] = "Host=db.example.test;Database=varplats"
+        });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("databas på den egna datorn", exception.Message);
+    }
+
+    [Fact]
+    public async Task DevSignInIsNotMappedWithoutDevAccounts()
+    {
+        await using var factory = CreateWorkflowFactory(new ReportWorkflowTestStore());
+        using var client = factory.CreateClient();
+        // No endpoint: the Razor component fallback only answers GET, so a POST gets 405.
+        var response = await client.PostAsync("/dev/signin", new FormUrlEncodedContent([new("account", "admin")]));
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed });
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+        var login = WebUtility.HtmlDecode(await client.GetStringAsync("/login"));
+        Assert.DoesNotContain("Testkonton", login);
+        Assert.Contains("Fortsätt med GitHub", login);
+    }
+
+    [Fact]
     public void PublicWritesRequireAuthentication()
     {
         using var factory = CreateFactory("Production", new() { ["Reporting:PublicWrites"] = "true" });

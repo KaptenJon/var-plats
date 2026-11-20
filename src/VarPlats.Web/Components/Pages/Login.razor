@@ -12,6 +12,28 @@
     {
         <p role="status">Inloggning är inte aktiverad i den här miljön.</p>
     }
+    else if (Configuration.GetValue<bool>(DevAccounts.ConfigurationKey))
+    {
+        <h2>Testkonton (endast lokalt)</h2>
+        <p>Det här är en lokal utvecklingsmiljö med syntetiska konton. Passkeys, e-post och Google/GitHub är avstängda här.</p>
+        @if (error is not null)
+        {
+            <p class="error" role="alert">@error</p>
+        }
+        <ul class="dev-accounts">
+            @foreach (var account in DevAccounts.All)
+            {
+                <li>
+                    <form action="/dev/signin" method="post">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="account" value="@account.Key" />
+                        <button type="submit">Logga in som @account.Label</button>
+                    </form>
+                    <p>@account.Description <span class="small">(@account.Email)</span></p>
+                </li>
+            }
+        </ul>
+    }
     else
     {
         <p>Logga in med en passkey, fysisk FIDO2-säkerhetsnyckel eller ett länkat Google-/GitHub-konto.</p>
@@ -75,7 +97,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && Configuration.GetValue<bool>("Authentication:Enabled"))
+        if (firstRender && Configuration.GetValue<bool>("Authentication:Enabled")
+            && !Configuration.GetValue<bool>(DevAccounts.ConfigurationKey))
         {
             try { module = await JS.InvokeAsync<IJSObjectReference>("import", "./passkeys.js"); }
             catch (JSException) { error = "Passkey-funktionen kunde inte laddas."; }
