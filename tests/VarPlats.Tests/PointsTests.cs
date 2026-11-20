@@ -13,17 +13,17 @@ namespace VarPlats.Tests;
 
 public sealed class PointsTests
 {
-    private static readonly ReportingMode Enabled = new(false, false, true, true, false, false, true);
-    private static readonly ReportingMode ReadOnly = new(false, false, false, true, false, false, true);
+    private static readonly ReportingMode Enabled = new(false, false, true, true, false, false, false, true);
+    private static readonly ReportingMode ReadOnly = new(false, false, false, true, false, false, false, true);
     private static readonly ReportingMode SwitchedOff = new(false, false, true, true);
 
     [Fact]
     public void PointsNeedTheirOwnSwitchTheWorkflowAndPublicWritesToChange()
     {
         Assert.False(SwitchedOff.Points);
-        Assert.False(new ReportingMode(false, false, false, false, false, false, true).Points);
-        Assert.False(new ReportingMode(true, false, false, true, false, false, true).Points);
-        Assert.False(new ReportingMode(false, true, false, true, false, false, true).Points);
+        Assert.False(new ReportingMode(false, false, false, false, false, false, false, true).Points);
+        Assert.False(new ReportingMode(true, false, false, true, false, false, false, true).Points);
+        Assert.False(new ReportingMode(false, true, false, true, false, false, false, true).Points);
         Assert.True(ReadOnly.Points);
         Assert.False(ReadOnly.CanUsePoints);
         Assert.True(Enabled.CanUsePoints);

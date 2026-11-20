@@ -87,6 +87,20 @@ Tillståndet ligger i `report_archives` och historiken i `report_archive_events`
 så den publika rapporttabellen ändras inte. Läsningar för karta, lista, API och
 närliggande tips utesluter arkiverade rapporter bara när inställningen är på.
 
+Återtagande av bekräftelser är en separat avstängd skiva med egen migration
+(`ConfirmationWithdrawals`) och egen inställning,
+`Reporting:ConfirmationWithdrawalEnabled`, som kräver arbetsflödet. Det konto som
+bekräftat kan ta tillbaka sin bekräftelse från rapportsidan efter ett
+bekräftelsesteg. Raden flyttas i en sats från `report_action_confirmations` till
+historiken `report_action_confirmation_withdrawals`, så statusberäkningen, som
+bara läser aktiva bekräftelser, inte behöver ändras. Omprövning efter
+återtagande nekas: en ny bekräftelse från samma konto skulle låta statusen växla
+fram och tillbaka och göra historiken svårare att tolka. Den som ångrar sig kan
+i stället anmäla innehållet eller be administratören ta bort åtgärden. Arkiverade
+rapporter nekar återtaganden när arkivering är på. Antalet återtaganden visas
+utan konto; kontoborttagning anonymiserar historiken. Delade `?rapport=`-länkar
+påverkas inte: kartmarkören får den omräknade statusen och sidan läses som förut.
+
 Skrivgränser är en egen avstängd skiva utan migration, `Reporting:RateLimits`.
 Blazor-komponenterna anropar kommandoklasserna i processen, så HTTP-middleware
 ser inte skrivningarna. `WriteRateLimiter` är därför en singleton i
@@ -104,9 +118,9 @@ gränser ligger under `Points:` och valideras vid start. Grundpoäng skrivs av
 `DatabaseReportActionStore.ConfirmAsync` i samma transaktion som en bekräftelse
 från ett annat konto, en gång per åtgärd. `points_events` är en händelsebok där
 saldot är en summa och återtagningar är motrader (`PointsLedger`);
-`IPointsStore` exponerar återtagningskrokar som återtagande av bekräftelser,
-arkivering eller administratörsbeslut kan anropa. Administratörens borttagning
-av en åtgärd eller rapport tar tillbaka poäng i samma transaktion. Hjärtan
+återtagande av en bekräftelse och administratörens borttagning av en åtgärd eller
+rapport tar tillbaka poäng i samma transaktion, och `IPointsStore` exponerar
+återtagningskrokar som arkivering eller administratörsbeslut kan anropa. Hjärtan
 (`action_hearts`) ger inga poäng. Gåvor flyttar poäng mellan konton som två rader
 med samma överförings-id. Rapportsidan visar hjärtan och poäng per åtgärd, och
 `/mina-poang` visar kontots eget saldo och historik. Det finns ingen topplista.
@@ -136,7 +150,9 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
 3. **Åtgärder:** den avstängda grundskivan sparar beskrivningar på publicerade
    rapporter; bevis, missbruksflöde och en säker lansering återstår.
 4. **Bekräftelser:** grundskivan tillåter ett annat konto och förbjuder
-   självbekräftelse; skydd mot manipulation, återtagande och tvister återstår.
+   självbekräftelse; återtagande med historik finns bakom
+   `Reporting:ConfirmationWithdrawalEnabled`. Skydd mot samordnad manipulation
+   och tvister återstår.
 5. **Poäng:** den avstängda grundskivan (`Reporting:PointsEnabled`) har spårbar
    regelversion, händelsebok från bekräftelser, hjärtan och poänggåvor;
    spärrar, bedrägeribedömning och administratörsåterkallelse återstår.

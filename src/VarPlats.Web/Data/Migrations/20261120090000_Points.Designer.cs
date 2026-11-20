@@ -445,6 +445,36 @@ partial class _20261120090000_Points
                 b.ToTable("report_action_confirmations");
             });
 
+        modelBuilder.Entity("VarPlats.Web.Data.ReportActionConfirmationWithdrawalEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("AccountId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ActionId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("ConfirmedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset>("WithdrawnAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("AccountId");
+
+                b.HasIndex("ActionId", "AccountId");
+
+                b.ToTable("report_action_confirmation_withdrawals", t =>
+                    {
+                        t.HasCheckConstraint("CK_report_action_confirmation_withdrawals_Order", "\"WithdrawnAt\" >= \"ConfirmedAt\"");
+                    });
+            });
+
         modelBuilder.Entity("VarPlats.Web.Data.ReportActionEntity", b =>
             {
                 b.Property<Guid>("Id")
@@ -827,6 +857,20 @@ partial class _20261120090000_Points
                     .HasForeignKey("AccountId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
+
+                b.HasOne("VarPlats.Web.Data.ReportActionEntity", null)
+                    .WithMany()
+                    .HasForeignKey("ActionId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportActionConfirmationWithdrawalEntity", b =>
+            {
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithMany()
+                    .HasForeignKey("AccountId")
+                    .OnDelete(DeleteBehavior.SetNull);
 
                 b.HasOne("VarPlats.Web.Data.ReportActionEntity", null)
                     .WithMany()

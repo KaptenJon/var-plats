@@ -82,6 +82,26 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   nekas i databasfrågan. Historiken sparar händelse, anledning, kommentar och
   tid men inte vilket administratörskonto som agerade. Kommentaren är publik
   fritext. När inställningen är av läses inga arkivtabeller.
+- Återtagande av bekräftelser och migrationen
+  `20261120080000_ConfirmationWithdrawals` är avstängda
+  (`Reporting:ConfirmationWithdrawalEnabled=false`) och inte tillämpade på Pi.
+  Inställningen kräver `Reporting:WorkflowEnabled`; att ta tillbaka kräver
+  dessutom publika skrivningar och ett verifierat medlems- eller
+  administratörskonto. Kontot hämtas från den verifierade inloggningen, så bara
+  det konto som bekräftat kan ta tillbaka bekräftelsen, inte författaren, andra
+  konton eller administratörer. En enda databassats flyttar den aktiva raden
+  till `report_action_confirmation_withdrawals` med bekräftelse- och
+  återtagandetid, så samtidiga upprepningar flyttar den högst en gång och
+  statusen räknas om utan den. Samma konto kan inte bekräfta åtgärden igen när
+  inställningen är på; det förhindrar att statusen växlas fram och tillbaka och
+  gör varje återtagande spårbart. Arkiverade rapporter nekas i samma sats när
+  arkivering är på. Publikt visas bara antalet återtaganden, aldrig konton.
+  Kontoborttagning sätter historikens kontolänk till null men behåller raden;
+  borttagning av åtgärd eller rapport kaskadraderar historiken. När
+  inställningen är av läses inte historiktabellen, och då hindras inte heller
+  en ny bekräftelse efter ett tidigare återtagande. När skrivgränser är på
+  räknas återtaganden mot samma gräns som bekräftelser. Detta ersätter inte
+  skydd mot samordnade konton eller en tvistprocess.
 - Skrivgränser (`Reporting:RateLimits:Enabled=false` som standard) kräver
   ingen migration. När de är på räknar en minnesbaserad begränsare per konto-id
   och kommando i ett fast tidsfönster: rapportinskick, åtgärdsuppgifter,
@@ -147,11 +167,13 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
     en återtagning är en ny motrad som pekar på raden den tar tillbaka (högst
     en per rad, unikt index). Samma bekräftande konto kan inte ge poäng till
     samma åtgärd två gånger, så att dra tillbaka och bekräfta igen ger inget.
-  - Återtagningskrok: `IPointsStore.ReverseConfirmationAsync` (för kommande
-    återtagande av bekräftelser; ger poäng från en kvarvarande bekräftelse om en
-    sådan finns) och `ReverseActionAsync` (arkivering eller administratörsbeslut).
-    Administratörens borttagning av en åtgärd eller rapport tar redan tillbaka
-    poängen i samma transaktion. Arkivering tar inte tillbaka poäng i dag.
+  - När ett konto tar tillbaka sin bekräftelse (`Reporting:ConfirmationWithdrawalEnabled`)
+    tas poängen som bekräftelsen gav tillbaka i samma transaktion, och poäng ges
+    i stället från en kvarvarande bekräftelse om en sådan finns. Återtagningskrokar
+    finns också på `IPointsStore` (`ReverseConfirmationAsync`, `ReverseActionAsync`)
+    för arkivering eller administratörsbeslut. Administratörens borttagning av en
+    åtgärd eller rapport tar tillbaka poängen i samma transaktion. Arkivering tar
+    inte tillbaka poäng i dag.
   - Hjärtan är en per konto och åtgärd, kan tas bort och ger aldrig poäng.
   - Gåvor flyttar poäng från givarens saldo till åtgärdens konto och skapar
     aldrig nya poäng; två rader med samma `TransferId` summerar till noll. Gåvor

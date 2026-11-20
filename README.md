@@ -45,7 +45,8 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 | Leaflet-karta, kategorifilter och tillgänglig rapportlista | Aktiverad rapportkö, överklaganden och missbruksskydd |
 | Validering och rapportering i isolerad lokal demo | Aktiverad bildhantering och färdiga modereringsverktyg |
 | Google/GitHub-inloggning med verifierad e-post, passkey/FIDO2 och uttrycklig kontolänkning; publik registrering aktiveras i den godkända Pi-releasen | Aktiverad publik åtgärdsrapportering och missbruksskydd |
-| Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd i förhandsversionen | Tvister, återtagande och skydd mot samordnad manipulation |
+| Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd i förhandsversionen | Tvister och skydd mot samordnad manipulation |
+| Kod för att ta tillbaka en egen bekräftelse med sparad historik, avstängd bakom `Reporting:ConfirmationWithdrawalEnabled` | Överklagande av bekräftelser |
 | Kod för att anmäla rapporter och åtgärdstexter till administratörer, avstängd bakom `Reporting:FlagsEnabled` | Överklaganden och skydd mot falska anmälningar |
 | Kod för att arkivera och återställa rapporter, avstängd bakom `Reporting:ArchiveEnabled` | Sammanslagning av dubbletter |
 | Skrivgränser per konto och gräns för läs-API:t, avstängda bakom `Reporting:RateLimits:Enabled` | Delade gränser mellan flera instanser och skydd mot många konton (Sybil) |
@@ -88,6 +89,14 @@ Kontoborttagning anonymiserar sparade åtgärder och tar bort kontots bekräftel
 men rensar inte personuppgifter som skrivits i fritext. Rapportstatus räknas om
 från de åtgärder och bekräftelser som finns kvar. När arbetsflödet är avstängt
 döljs åtgärderna och den tidigare lagrade rapportstatusen visas.
+
+Om även `Reporting:ConfirmationWithdrawalEnabled` (av som standard) aktiveras kan
+ett konto ta tillbaka sin egen bekräftelse med knappen "Ta tillbaka bekräftelse"
+och ett bekräftelsesteg. Statusen räknas då om utan den. Att bekräftelsen tagits
+tillbaka sparas i historiken och visas som ett antal på åtgärden, utan konto.
+Samma konto kan inte bekräfta uppgiften igen, så att statusen inte kan växlas
+fram och tillbaka. Arkiverade rapporter tar inte emot återtaganden. Migrationen
+`ConfirmationWithdrawals` tillämpas inte automatiskt.
 
 ### Bilder – kod finns, uppladdning är avstängd
 

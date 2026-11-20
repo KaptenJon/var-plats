@@ -34,8 +34,8 @@ internal static class PointsDatabaseScenario
                 """);
 
         var options = new PointsOptions { ConfirmedActionPoints = 10, MaxGiftPerTransfer = 5, MaxGiftPerDay = 8 };
-        var mode = new ReportingMode(false, false, true, true, false, true, true);
-        var off = new ReportingMode(false, false, true, true, false, true);
+        var mode = new ReportingMode(false, false, true, true, false, true, true, true);
+        var off = new ReportingMode(false, false, true, true, false, true, true);
         var actions = new ReportActionCommands(mode, new DatabaseReportActionStore(contexts, mode, options),
             accountAccess: SyntheticReportAccountAccess.Instance);
         var offActions = new ReportActionCommands(off, new DatabaseReportActionStore(contexts, off),
@@ -122,6 +122,20 @@ internal static class PointsDatabaseScenario
             .First(item => item.Reason == PointsReason.Reversal);
         Assert.Equal(PointsReversalCause.ConfirmationWithdrawn, reversal.Cause);
         Assert.Equal(-10, reversal.Amount);
+
+        // The real withdrawal flow calls the hook in its own transaction: the confirming account withdraws,
+        // the award goes back, and a re-confirmation is refused so it cannot be earned again.
+        var withdrawn = await AddActionAsync(actions, thirdAccount, reportId, "Syntetisk åtgärd för återtagande.");
+        Assert.Equal(ActionConfirmationResult.Confirmed, await actions.ConfirmAsync(authorAccount, reportId, withdrawn));
+        Assert.Equal(10, (await points.GetOwnAsync(thirdAccount)).Balance);
+        Assert.Equal(ConfirmationWithdrawalResult.Withdrawn,
+            await actions.WithdrawConfirmationAsync(authorAccount, reportId, withdrawn));
+        var afterWithdrawal = await points.GetOwnAsync(thirdAccount);
+        Assert.Equal(0, afterWithdrawal.Balance);
+        Assert.Equal(PointsReversalCause.ConfirmationWithdrawn,
+            afterWithdrawal.History.Single(item => item.Reason == PointsReason.Reversal).Cause);
+        Assert.NotEqual(ActionConfirmationResult.Confirmed, await actions.ConfirmAsync(authorAccount, reportId, withdrawn));
+        Assert.Equal(0, (await points.GetOwnAsync(thirdAccount)).Balance);
 
         // Admin removal takes the award back and keeps the ledger history.
         Assert.True(await actions.RemoveAsync(admin, reportId, secondsFix));

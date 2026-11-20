@@ -153,6 +153,10 @@
                         <li>
                             <article>
                                 <p><strong>@ConfirmationText(action.ConfirmationCount)</strong> · @FormatTime(action.CreatedAt) UTC</p>
+                                @if (action.WithdrawnCount > 0)
+                                {
+                                    <p class="small">@WithdrawnText(action.WithdrawnCount)</p>
+                                }
                                 <p class="action-description">@action.Description</p>
                                 @if (actionPhotoIds.Contains(action.Id))
                                 {
@@ -165,6 +169,27 @@
                                 else if (action.HasConfirmed)
                                 {
                                     <p class="small">Ditt konto har redan bekräftat uppgiften.</p>
+                                    @if (canWithdraw && archive is not null)
+                                    {
+                                        <p class="small">Bekräftelser på arkiverade rapporter kan inte tas tillbaka.</p>
+                                    }
+                                    else if (canWithdraw && withdrawTarget == action.Id)
+                                    {
+                                        <div class="flag-form" role="group" aria-labelledby="@($"withdraw-{action.Id:N}")">
+                                            <p id="@($"withdraw-{action.Id:N}")"><strong>Ta tillbaka din bekräftelse?</strong></p>
+                                            <p class="small">Rapportens status räknas om utan din bekräftelse. Att den tagits tillbaka sparas i historiken och ditt konto kan inte bekräfta uppgiften igen.</p>
+                                            <button type="button" class="text-button" disabled="@busy" @onclick="() => Withdraw(action.Id)">@(busy ? "Tar tillbaka…" : "Ja, ta tillbaka bekräftelsen")</button>
+                                            <button type="button" class="text-button" disabled="@busy" @onclick="CloseWithdraw">Avbryt</button>
+                                        </div>
+                                    }
+                                    else if (canWithdraw)
+                                    {
+                                        <button type="button" class="text-button" disabled="@busy" @onclick="() => OpenWithdraw(action.Id)">Ta tillbaka bekräftelse</button>
+                                    }
+                                }
+                                else if (action.HasWithdrawn)
+                                {
+                                    <p class="small">Ditt konto har tagit tillbaka sin bekräftelse och kan inte bekräfta uppgiften igen.</p>
                                 }
                                 else if (canWrite)
                                 {
@@ -245,7 +270,9 @@
     private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>(), actionPhotoIds = new HashSet<Guid>();
     private Guid? loadedReportId;
     private int photoFieldVersion;
-    private bool canWrite, canRemove, canFlag, canArchive, canUsePoints, archiveFormOpen, loading = true, busy;
+    private bool canWrite, canRemove, canFlag, canArchive, canWithdraw, canUsePoints, archiveFormOpen, loading = true, busy;
+    // Which action has its withdrawal confirm step open.
+    private Guid? withdrawTarget;
     private IReadOnlyDictionary<Guid, ActionAppreciation> appreciation = new Dictionary<Guid, ActionAppreciation>();
     private int? ownBalance;
     // Gift dialog: which action it is open for, and whether the confirm step is showing.
@@ -269,6 +296,7 @@
             photoSelection = new(null, false);
             photoFieldVersion++;
             flagTarget = null;
+            withdrawTarget = null;
             archiveFormOpen = false;
             giftTarget = null;
         }
@@ -276,6 +304,7 @@
         canArchive = Mode.CanArchive && ReportCommands.CanModerate(user);
         canFlag = Mode.CanFlag && ReportCommands.CanReport(user);
         canWrite = Mode.PublicWorkflow && ReportCommands.CanReport(user);
+        canWithdraw = Mode.CanWithdrawConfirmation && ReportCommands.CanReport(user);
         canRemove = Mode.PublicWorkflow && ReportCommands.CanModerate(user);
         canUsePoints = Mode.CanUsePoints && ReportCommands.CanReport(user);
         await Reload();
@@ -396,6 +425,7 @@
                 ActionConfirmationResult.Confirmed => "Ditt konto har bekräftat uppgiften.",
                 ActionConfirmationResult.AlreadyConfirmed => "Ditt konto har redan bekräftat uppgiften.",
                 ActionConfirmationResult.OwnAction => "Ditt konto kan inte bekräfta en egen uppgift.",
+                ActionConfirmationResult.Withdrawn => "Ditt konto har tagit tillbaka sin bekräftelse och kan inte bekräfta uppgiften igen.",
                 _ => "Åtgärdsuppgiften finns inte längre."
             };
         }
@@ -405,6 +435,45 @@
         {
             Logger.LogError(exception, "Åtgärdsuppgiften kunde inte bekräftas.");
             error = "Bekräftelsen kunde inte sparas. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private void OpenWithdraw(Guid actionId)
+    {
+        withdrawTarget = actionId;
+        status = null;
+        error = null;
+    }
+
+    private void CloseWithdraw() => withdrawTarget = null;
+
+    private async Task Withdraw(Guid actionId)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var user = (await AuthenticationStateTask).User;
+            var result = await Actions.WithdrawConfirmationAsync(user, ReportId, actionId);
+            withdrawTarget = null;
+            await Reload();
+            status = result switch
+            {
+                ConfirmationWithdrawalResult.Withdrawn => "Din bekräftelse är tillbakatagen. Rapportens status har räknats om.",
+                ConfirmationWithdrawalResult.NotConfirmed => "Ditt konto har ingen aktiv bekräftelse på uppgiften.",
+                ConfirmationWithdrawalResult.Archived => "Rapporten är arkiverad. Bekräftelsen kan inte tas tillbaka.",
+                _ => "Åtgärdsuppgiften finns inte längre."
+            };
+        }
+        catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att ta tillbaka en bekräftelse."; }
+        catch (WriteRateLimitException exception) { error = exception.Message; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Bekräftelsen kunde inte tas tillbaka.");
+            error = "Bekräftelsen kunde inte tas tillbaka. Försök igen senare.";
         }
         finally { busy = false; }
     }
@@ -671,6 +740,10 @@
         1 => "Bekräftad av ett annat konto",
         _ => $"Bekräftad av {count} andra konton"
     };
+
+    private static string WithdrawnText(int count) => count == 1
+        ? "1 bekräftelse har tagits tillbaka"
+        : $"{count} bekräftelser har tagits tillbaka";
 
     private void SetPhoto(PhotoSelection selection) => photoSelection = selection;
 

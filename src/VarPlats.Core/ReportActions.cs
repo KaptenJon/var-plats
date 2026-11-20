@@ -2,11 +2,17 @@ using System.ComponentModel.DataAnnotations;
 
 namespace VarPlats.Core;
 
+/// <summary>
+/// A documented action. <see cref="WithdrawnCount"/> and <see cref="HasWithdrawn"/> are only filled in when
+/// confirmation withdrawal is switched on; withdrawn confirmations never count towards the status.
+/// </summary>
 public sealed record ReportAction(
     Guid Id, string Description, DateTimeOffset CreatedAt, int ConfirmationCount,
-    bool IsOwnAction, bool HasConfirmed);
+    bool IsOwnAction, bool HasConfirmed, int WithdrawnCount = 0, bool HasWithdrawn = false);
 
-public enum ActionConfirmationResult { Confirmed, AlreadyConfirmed, OwnAction, NotFound }
+public enum ActionConfirmationResult { Confirmed, AlreadyConfirmed, OwnAction, NotFound, Withdrawn }
+
+public enum ConfirmationWithdrawalResult { Withdrawn, NotConfirmed, Archived, NotFound }
 
 public sealed class ReportActionDraft : IValidatableObject
 {
@@ -37,4 +43,11 @@ public interface IReportActionStore
         Guid reportId, Guid actionId, Guid accountId, CancellationToken cancellationToken = default);
     Task<bool> RemoveAsync(
         Guid reportId, Guid actionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Withdraws the account's own active confirmation and keeps a history row. Only available when
+    /// confirmation withdrawal is switched on.
+    /// </summary>
+    Task<ConfirmationWithdrawalResult> WithdrawConfirmationAsync(
+        Guid reportId, Guid actionId, Guid accountId, CancellationToken cancellationToken = default);
 }
