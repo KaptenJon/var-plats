@@ -155,6 +155,27 @@ public sealed class WebTests
     }
 
     [Fact]
+    public void PointsRequireTheWorkflow()
+    {
+        using var factory = CreateFactory("Production", new() { ["Reporting:PointsEnabled"] = "true" });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Reporting:PointsEnabled", exception.Message);
+    }
+
+    [Fact]
+    public void InvalidPointsLimitsStopStartup()
+    {
+        using var factory = CreateFactory("Development", new()
+        {
+            ["Reporting:Demo"] = "true",
+            ["Points:MaxGiftPerTransfer"] = "20",
+            ["Points:MaxGiftPerDay"] = "5"
+        });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Points:MaxGiftPerDay", exception.Message);
+    }
+
+    [Fact]
     public void FlagsRequireTheWorkflow()
     {
         using var factory = CreateFactory("Production", new() { ["Reporting:FlagsEnabled"] = "true" });
@@ -356,6 +377,10 @@ public sealed class WebTests
         Assert.Contains("visas texten direkt och utan förhandsgranskning", reporterPage);
         Assert.Contains("personuppgifter", reporterPage);
         Assert.Contains("Utsätt inte dig själv", reporterPage);
+        // Points are switched off: no hearts, gifts, balance or ledger reads.
+        Assert.DoesNotContain("Ge hjärta", reporterPage);
+        Assert.DoesNotContain("Skicka poäng", reporterPage);
+        Assert.DoesNotContain("Mina poäng", reporterPage);
 
         var action = Assert.Single(await store.ListAsync(published.Id, reporterId));
         Assert.Equal(ActionConfirmationResult.Confirmed,
@@ -422,6 +447,63 @@ public sealed class WebTests
         Assert.Contains("Ditt konto har tagit tillbaka sin bekräftelse", withdrawnPage);
         Assert.DoesNotContain("Bekräfta uppgiften</button>", withdrawnPage);
         Assert.DoesNotContain(confirmerId.ToString(), withdrawnPage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PointsPagesShowHeartsGiftsSafetyNoteAndOwnBalance()
+    {
+        var store = new ReportWorkflowTestStore();
+        var points = new RecordingPointsStore();
+        var authorId = Guid.NewGuid();
+        var viewerId = Guid.NewGuid();
+        var draft = ReportTests.ValidDraft();
+        draft.Title = "Syntetisk rapport med poäng";
+        var published = await store.SubmitAsync(authorId, draft);
+        Assert.True(await store.DecideAsync(published.Id, ReportReviewStatus.Approved));
+        Assert.True(await store.AddAsync(published.Id, authorId, new ReportActionDraft
+        {
+            Description = "Syntetisk städning utan personuppgifter."
+        }));
+        await using var factory = CreateWorkflowFactory(store).WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Reporting:PointsEnabled", "true");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IPointsStore>();
+                services.AddSingleton<IPointsStore>(points);
+            });
+        });
+        using var client = factory.CreateClient();
+        var url = $"/rapporter/{published.Id}";
+
+        var publicPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("Poäng ges aldrig för farliga insatser – ta inga risker.", publicPage);
+        Assert.Contains("Inga hjärtan · 10 poäng till åtgärden", publicPage);
+        Assert.DoesNotContain("Ge hjärta", publicPage);
+        Assert.DoesNotContain("Skicka poäng", publicPage);
+        Assert.DoesNotContain("topplista", publicPage, StringComparison.OrdinalIgnoreCase);
+
+        client.DefaultRequestHeaders.Add("X-Synthetic-Role", "Member");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", viewerId.ToString());
+        var viewerPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("Ge hjärta", viewerPage);
+        Assert.Contains("Skicka poäng", viewerPage);
+        Assert.Contains("Ditt saldo: 25 poäng", viewerPage);
+        Assert.DoesNotContain(authorId.ToString(), viewerPage, StringComparison.OrdinalIgnoreCase);
+        var home = WebUtility.HtmlDecode(await client.GetStringAsync("/"));
+        Assert.Contains("Mina poäng", home);
+        var ownPoints = WebUtility.HtmlDecode(await client.GetStringAsync("/mina-poang"));
+        Assert.Contains("Saldo: 25 poäng", ownPoints);
+        Assert.Contains("Det finns ingen topplista", ownPoints);
+        Assert.Contains("regel poang-v1", ownPoints);
+
+        client.DefaultRequestHeaders.Remove("X-Synthetic-Id");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", authorId.ToString());
+        var authorPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.DoesNotContain("Ge hjärta", authorPage);
+        Assert.DoesNotContain("Skicka poäng</button>", authorPage);
+        Assert.Empty(points.Hearts);
+        Assert.Empty(points.Gifts);
     }
 
     [Fact]

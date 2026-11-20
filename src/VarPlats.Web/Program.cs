@@ -31,6 +31,7 @@ var workflowEnabled = builder.Configuration.GetValue<bool>("Reporting:WorkflowEn
 var flagsEnabled = builder.Configuration.GetValue<bool>("Reporting:FlagsEnabled");
 var archiveEnabled = builder.Configuration.GetValue<bool>("Reporting:ArchiveEnabled");
 var confirmationWithdrawalEnabled = builder.Configuration.GetValue<bool>("Reporting:ConfirmationWithdrawalEnabled");
+var pointsEnabled = builder.Configuration.GetValue<bool>("Reporting:PointsEnabled");
 var authenticationEnabled = builder.Configuration.GetValue<bool>("Authentication:Enabled");
 if ((demo || localWrites) && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Demo och lokala skrivningar är endast tillåtna i Development.");
@@ -53,9 +54,13 @@ if (archiveEnabled && !workflowEnabled)
 if (confirmationWithdrawalEnabled && !workflowEnabled)
     throw new InvalidOperationException(
         "Reporting:ConfirmationWithdrawalEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
+if (pointsEnabled && !workflowEnabled)
+    throw new InvalidOperationException("Reporting:PointsEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
 
 var reportingMode = new ReportingMode(demo, localWrites, publicWrites, workflowEnabled, flagsEnabled,
-    archiveEnabled, confirmationWithdrawalEnabled);
+    archiveEnabled, confirmationWithdrawalEnabled, pointsEnabled);
+var pointsOptions = builder.Configuration.GetSection("Points").Get<PointsOptions>() ?? new PointsOptions();
+pointsOptions.Validate();
 var rateLimitOptions = builder.Configuration.GetSection("Reporting:RateLimits").Get<RateLimitOptions>()
     ?? new RateLimitOptions();
 rateLimitOptions.Validate();
@@ -114,6 +119,8 @@ builder.Services.AddScoped<ReportCommands>();
 builder.Services.AddScoped<ReportActionCommands>();
 builder.Services.AddScoped<ContentFlagCommands>();
 builder.Services.AddScoped<ReportArchiveCommands>();
+builder.Services.AddSingleton(pointsOptions);
+builder.Services.AddScoped<PointsCommands>();
 builder.Services.AddScoped<PhotoUploadCommands>();
 if (photoOptions.Enabled)
 {
@@ -387,6 +394,7 @@ else
     builder.Services.AddScoped<IReportActionStore, DatabaseReportActionStore>();
     builder.Services.AddScoped<IContentFlagStore, DatabaseContentFlagStore>();
     builder.Services.AddScoped<IReportArchiveStore, DatabaseReportArchiveStore>();
+    builder.Services.AddScoped<IPointsStore, DatabasePointsStore>();
     builder.Services.AddHealthChecks().AddDbContextCheck<ReportDbContext>();
 }
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -414,6 +422,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
     if (photoOptions.Enabled
         && (context.Request.Path.StartsWithSegments("/mina-rapporter")
+            || context.Request.Path.StartsWithSegments("/mina-poang")
             || context.Request.Path.StartsWithSegments("/moderering")
             || context.Request.Path.StartsWithSegments("/rapporter")))
     {
