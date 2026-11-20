@@ -1,7 +1,11 @@
 # Raspberry Pi och drift
 
 **Inte ett godkännande för publik lansering.** Läs SECURITY.md och juridiska utkast
-först. Publika skrivningar och organisationsbevakning är inte öppnade.
+först. Ägaren beslutade 2026-11-20 att release-workflowen ska slå på alla
+funktionsbrytare som finns på `main` (se
+[Aktivera alla brytare på Pi](#aktivera-alla-brytare-på-pi-ägarbeslut-2026-11-20)).
+Beslutet gör inte lanseringskraven klara; de öppna punkterna står i
+[checklistan](#öppna-lanseringskrav-som-koden-inte-löser). Organisationsbevakning är inte öppnad.
 
 ## Villkorade hårdvarukrav
 
@@ -87,26 +91,38 @@ Initialt är databasrollen schemaägare för enkel lokal uppstart; skapa en sepa
 runtime-roll med endast SELECT före publik läsdrift. Publik skrivning är en
 separat opt-in; databasen ska försvara gränsen även om appkonfigurationen ändras.
 Begränsa schemaägaren till migrationer.
-För godkända publika skrivningar finns `deploy/pi-public-write-role.sql`, som
-ger runtime-rollen INSERT/DELETE på rapporttabellen. Kör den manuellt först när
-integritets- och retentionsbeslut är klara och funktionen uttryckligen ska öppnas;
-den nuvarande Pi-deployen förblir skrivskyddad.
+För publika skrivningar finns `deploy/pi-public-write-role.sql`, som ger
+runtime-rollen INSERT/DELETE på rapporttabellen, och `deploy/pi-workflow-grants.sql`,
+som ger de minsta behörigheter varje ny tabell behöver. Båda körs manuellt enligt
+ordningen nedan; release-workflowen kör dem aldrig, men `deploy-release.sh`
+avbryter innan webben byts om de saknas.
 
 Webb kör som icke-root, med read-only rotfilsystem, tmpfs, borttagna capabilities
 och beständig Data Protection-volym. Kryptering av volym/backup och nycklar är
 driftansvar. Kontrollera volymrättigheter innan första riktiga uppstart.
 
-### Framtida bildlagring – inte aktiverad i Pi-releasen
+### Bildlagring och clamd
 
-Bildkoden är opt-in och aktiverar inte bildtjänster i Compose eller release och
-ändrar inga grants eller resurser på Pi. Standard
-`Photos:Enabled=false` kräver ingen bildtabell, bildvolym eller skanner. Skapa
-inte dessa resurser och tillämpa inte `20261108164953_ReportPhotos` i den
-nuvarande förhandsversionen. Aktivering kräver separat ägarbeslut, granskade
-begränsade databasbehörigheter, backup och ett testat migrations-/återställnings-
-förfarande utöver alla skriv- och lanseringsgrindar i SECURITY.md.
+Standard `Photos:Enabled=false` (Compose och `.env.example`) kräver ingen
+bildtabell, bildvolym eller skanner. Release-workflowen sätter `PHOTOS_ENABLED=true`
+(ägarbeslut 2026-11-20). Då gör `deploy-release.sh`, före bytet av webbcontainer:
 
-För ett framtida isolerat driftprov krävs 64-bitars Linux med `procfs`, en
+1. ger volymerna `varplats_photos` och `varplats_scanner-socket` ägare UID 1654 och
+   läge `0700`, och signaturvolymen `varplats_clamav-signatures` ägare UID 1654;
+2. startar Compose-tjänsten `clamav` (profil `photos`) och väntar högst 15 minuter
+   på att den blir frisk. Första starten laddar ned signaturer.
+
+`clamav` kör `clamav/clamav-debian:1.5` pinnad till dess `linux/arm64`-digest
+(den vanliga `clamav/clamav`-imagen saknar ARM64). Den kör som UID 1654 med
+skrivskyddat rotfilsystem, utan capabilities och utan nätverksport: clamd lyssnar
+bara på `/run/varplats/scanner/clamd.sock` (`deploy/clamd.conf`, läge `0600`) och
+freshclam uppdaterar signaturerna (`deploy/freshclam.conf`). Webben monterar
+`/var/lib/varplats/photos` och socketkatalogen; `Photos:StoragePath` och
+`Photos:ScannerSocketPath` sätts i `deploy/compose.yml`. `pi.override.yml`
+begränsar clamd till 1,5 GiB RAM eftersom hela signaturdatabasen ligger i minnet;
+det och tjänstens start på ARM64 är **inte provat på Pi:n** ännu.
+
+Kraven nedan gäller fortfarande. För driftprovet krävs 64-bitars Linux med `procfs`, en
 dedikerad lokal lagringskatalog **utanför webroot**, ägd av webbprocessens UID
 och med rättighet `0700`. Inga katalogkomponenter får vara symlänkar eller
 skrivbara för grupp/andra; lagringen får inte delas med andra appar eller vara
@@ -152,8 +168,12 @@ administratörer på Pi:n kan dock läsa containerns miljö. `GHCR_PULL_TOKEN` �
 separat klassisk GitHub-token med `read:packages` för att hämta den privata
 webbimagen; den skickas inte till webbcontainern. Den kan läsa privata paket som
 kontot har tillgång till och måste roteras före utgång. Begränsa därför runner-
-och värdåtkomst. Den godkända release-workflowen aktiverar autentisering men
-håller `REPORTING_PUBLIC_WRITES` till `false`. Den läser Caddys exakta IPv4-gateway
+och värdåtkomst. Den godkända release-workflowen aktiverar autentisering och,
+efter ägarbeslutet 2026-11-20, `REPORTING_WORKFLOW_ENABLED`,
+`REPORTING_PUBLIC_WRITES`, `REPORTING_FLAGS_ENABLED`, `REPORTING_ARCHIVE_ENABLED`,
+`RATE_LIMITS_ENABLED` och `PHOTOS_ENABLED`. Värdena skickas till containern vid
+varje deploy och skrivs inte till `.env`; en manuell `docker compose up` utan dem
+startar alltså webben skrivskyddad. Den läser Caddys exakta IPv4-gateway
 från det befintliga Vår plats-webbcontainerns nätverk; den gissar inte proxy-IP.
 
 Installationen under `/home/kapten/apps/varplats` innehåller `deploy/compose.yml`,
@@ -168,6 +188,8 @@ Runnern installeras separat under `/home/kapten/actions-runner-varplats` med
 GitHubs officiella `svc.sh` som systemtjänst för `kapten`. Inga befintliga
 systemtjänster, Docker-projekt, proxyregler eller brandväggsregler ska ändras.
 Runnern kräver utgående HTTPS/443 till GitHub och GHCR, inte inkommande SSH.
+Med bilder påslagna behöver Pi:n också utgående HTTPS till Docker Hub (clamd-imagen)
+och `database.clamav.net` (signaturer).
 
 För en **ny, tom installation** skapas ett slumpat schemaägarlösenord i
 `deploy/secrets/db_password` och ett separat hexlösenord i
@@ -279,8 +301,8 @@ Den godkända release-workflowen kör Identity-schemat och den Identity-begräns
 runtime-granten efter taggverifiering och environment-ägargodkännande. Schemat
 lägger även till kontoskapande-/senaste-inloggningstidpunkt; konton tas bort när
 de varit inaktiva i 12 månader, med kontroll varje dygn. Självradering finns på
-sidan Inloggningsmetoder. `deploy/pi-public-write-role.sql` är en separat spärr
-och körs inte; rapportskrivning förblir avstängd.
+sidan Inloggningsmetoder. `deploy/pi-public-write-role.sql` och
+`deploy/pi-workflow-grants.sql` är separata spärrar som ägaren kör manuellt.
 
 Operatörens lagringsregel är högst 12 månader för krypterade säkerhetskopior.
 Backupmålet ligger utanför denna release-workflow: konfigurera och kontrollera
@@ -290,9 +312,138 @@ månad, med högst två månaders förlängning för komplexa ärenden och beske
 den första månaden. Säkerhetskopior kan innehålla raderade uppgifter tills
 rotationen löper ut.
 
-`REPORTING_PUBLIC_WRITES` är `false` i Compose-exemplet. Att sätta den till `true`
-kräver även fungerande OAuth-konfiguration och den separata manuella SQL-granten.
-Den aktuella releasen öppnar inte rapportskrivning.
+Alla brytare är `false` i Compose-exemplet och i `.env.example`. Release-workflowen
+sätter dem till `true`; det kräver fungerande OAuth-konfiguration och de manuella
+databasstegen nedan.
+
+## Aktivera alla brytare på Pi (ägarbeslut 2026-11-20)
+
+Ägaren beslutade 2026-11-20 att Pi-releasen ska slå på alla brytare som finns på
+`main`: `Reporting:WorkflowEnabled`, `Reporting:PublicWrites`,
+`Reporting:FlagsEnabled`, `Reporting:ArchiveEnabled`,
+`Reporting:RateLimits:Enabled` och `Photos:Enabled` (utöver den redan påslagna
+autentiseringen). Brytare som ännu inte finns på `main` ingår inte.
+Startkontrollerna i `Program.cs` är oförändrade.
+
+EF-migreringar tillämpas **aldrig** automatiskt, varken vid uppstart eller av
+release-workflowen. `deploy-release.sh` kontrollerar i stället skrivskyddat
+(`BEGIN READ ONLY`) mot `__EFMigrationsHistory` och `has_table_privilege` att de
+migreringar och grants som de påslagna brytarna kräver finns. Saknas något
+avbryts deployen med ett svenskt felmeddelande innan webben byts, och den gamla
+versionen fortsätter köra. Gör därför stegen nedan **i denna ordning före** den
+första taggen med brytarna påslagna.
+
+Filerna i ordning, alla granskade i samma PR som brytarna:
+
+| Fil | Innehåll |
+|---|---|
+| `deploy/pi-workflow-migrations.sql` | Idempotent `dotnet ef migrations script --idempotent` från `20261108035738_IdentityAccountActivity` (Pi:ns nuvarande nivå via `identity-schema.sql`) till `20261119222822_ReportArchive`: granskning, åtgärder/bekräftelser, bilder (med triggrar), flaggor och arkiv. Ett test jämför filen med EF-migreringarna. |
+| `deploy/pi-public-write-role.sql` | INSERT/DELETE på `reports` för `varplats_reader`. |
+| `deploy/pi-workflow-grants.sql` | Minsta behörigheter per ny tabell för `varplats_reader` (se kommentarer i filen). Ingen UPDATE eller DELETE där koden inte behöver det; bildmetadata är oföränderlig. |
+
+CI kör migreringsskriptet två gånger och sedan båda grantfilerna mot en tom
+PostGIS-databas med Pi:ns bas- och Identity-schema, och kontrollerar varje
+behörighet. Det ersätter inte ett prov mot en kopia av Pi:ns riktiga data.
+
+Stegen körs på Pi:n som `kapten` i `/home/kapten/apps/varplats`. Hämta de tre
+SQL-filerna från **samma granskade commit** som den kommande taggen till en
+privat katalog, till exempel `~/varplats-sql/`, och jämför dem med PR:en.
+
+```sh
+cd /home/kapten/apps/varplats
+compose=(docker compose --project-name varplats --env-file deploy/.env
+  -f deploy/compose.yml -f deploy/pi.override.yml)
+```
+
+1. **Backup.** Ta en färsk databasbackup och kontrollera att den går att läsa.
+   Lägg den krypterad utanför Pi:n enligt backupavsnittet nedan.
+
+   ```sh
+   umask 077; mkdir -p ~/varplats-backup
+   backup=~/varplats-backup/fore-brytare-$(date +%F).backup
+   "${compose[@]}" exec -T db pg_dump -U varplats -d varplats -Fc > "$backup"
+   "${compose[@]}" exec -T db pg_restore --list < "$backup" | head
+   ```
+
+   Prova helst en återställning i en separat, tom testdatabas innan steg 2.
+2. **Migreringar.** Kör skriptet som schemaägaren. Varje migrering körs i en
+   egen transaktion och hoppas över om den redan finns i `__EFMigrationsHistory`.
+   Vid fel stoppar `ON_ERROR_STOP` skriptet; tidigare klara migreringar ligger
+   kvar och skriptet kan köras om efter rättning.
+
+   ```sh
+   "${compose[@]}" exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
+     < ~/varplats-sql/pi-workflow-migrations.sql
+   "${compose[@]}" exec -T db psql -U varplats -d varplats \
+     -c 'SELECT "MigrationId" FROM "__EFMigrationsHistory" ORDER BY 1;'
+   ```
+
+   Listan ska sluta med `20261119222822_ReportArchive` (åtta rader totalt).
+   Den nuvarande webben fungerar vidare: med brytarna av läses inga nya tabeller.
+3. **Grants.** Kör skrivgranten och sedan arbetsflödesgranten.
+
+   ```sh
+   "${compose[@]}" exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
+     < ~/varplats-sql/pi-public-write-role.sql
+   "${compose[@]}" exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
+     < ~/varplats-sql/pi-workflow-grants.sql
+   ```
+4. **Deploy.** Skapa den annoterade versionstaggen på `main` enligt det vanliga
+   flödet och godkänn `pi-preview`. Releasejobbet installerar `clamd.conf` och
+   `freshclam.conf`, kör förkontrollen, förbereder bildvolymerna, startar
+   `clamav` och byter sedan webben. Första starten av clamd kan ta många minuter;
+   jobbets tidsgräns är 30 minuter.
+5. **Röktest** med syntetiska data, aldrig riktiga personuppgifter:
+   - `/health/ready` svarar och `"${compose[@]}" --profile photos ps` visar
+     `clamav` som `healthy`;
+   - logga in, skicka en syntetisk rapport med en syntetisk bild och godkänn
+     den som admin; kontrollera att den syns på kartan och i listan;
+   - lägg en åtgärd från ett konto och bekräfta den från ett annat; flagga den
+     och avfärda flaggan som admin;
+   - arkivera och återställ rapporten;
+   - skicka många inskick i följd och kontrollera att skrivgränsen ger ett
+     svenskt meddelande;
+   - ta bort testinnehållet som admin efteråt och läs loggarna utan att kopiera
+     innehåll från dem.
+6. **Rollback.**
+   - *Snabbt, på Pi:n:* starta webben utan releasens miljö. Då är alla brytare
+     `false` och autentiseringen av, alltså skrivskyddat läge. Ange föregående
+     digest i `WEB_IMAGE` i `deploy/.env` om även koden ska tillbaka, och stoppa
+     skannern.
+
+     ```sh
+     "${compose[@]}" up -d --no-build --no-deps web
+     "${compose[@]}" --profile photos stop clamav
+     ```
+   - *Varaktigt:* sätt brytarna till `"false"` i `.github/workflows/release.yml`
+     via en granskad PR och tagga en ny release. Kvarvarande tabeller och grants
+     påverkar inte webben när brytarna är av.
+   - *Data:* återställ backupen från steg 1 bara om data skadats, eftersom allt som
+     skrivits efter backupen försvinner. Stoppa webben först, återställ till en
+     tom databas enligt backupavsnittet och kontrollera rapportantal. Ta även
+     backup av volymen `varplats_photos` tillsammans med databasen; bildfiler
+     och bildrader måste höra ihop.
+
+### Öppna lanseringskrav som koden inte löser
+
+Brytarna är på, men följande är **inte klart** och är fortfarande ägarens ansvar
+innan riktiga användare bjuds in:
+
+- [ ] Integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor
+      och arkivhistorik, inklusive fritext som kan innehålla personuppgifter.
+- [ ] Villkor och integritetsinformation uppdaterade och godkända för rapportering,
+      åtgärder, bilder och anmälningar.
+- [ ] Bemannad granskningskö med svarstid, även för direktpublicerade åtgärder och
+      anmälningar.
+- [ ] Prov av backup och återställning (databas och bildvolym tillsammans) i en
+      separat, tom miljö.
+- [ ] Prov av clamd på Pi:n (ARM64): start, signaturuppdatering, minne och svar
+      på `zINSTREAM`.
+- [ ] Lastprov på Pi:n med alla brytare på (Blazor-kretsar, RAM, clamd, databas).
+
+Kända begränsningar som följer med: API-gränsen för `GET /api/reports` blir en
+gemensam gräns bakom Caddy, skrivgränserna är per process och nollställs vid
+omstart, och spam-/Sybil-skydd över många konton saknas.
 
 ## Backup, återställning och rollback
 

@@ -46,8 +46,8 @@ for expected in \
 done
 # Migreringar och grants är manuella steg; releasen får aldrig tillämpa dem.
 for manual in pi-public-write-role.sql pi-workflow-migrations.sql pi-workflow-grants.sql; do
-    ! grep -Fq "$manual" "$release_workflow"
-    ! grep -Fq "$manual" "$root/deploy/deploy-release.sh"
+    ! grep -Fq "$manual" "$release_workflow" || exit 1
+    ! grep -Eq "(<|psql).*$manual" "$root/deploy/deploy-release.sh" || exit 1
 done
 # En vanlig Compose-körning förblir skrivskyddad.
 for flag in AUTHENTICATION_ENABLED REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_WRITES REPORTING_FLAGS_ENABLED \
@@ -56,7 +56,7 @@ for flag in AUTHENTICATION_ENABLED REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_W
     grep -Fxq "$flag=false" "$root/deploy/.env.example"
 done
 grep -Eq 'clamav-debian:[0-9.]+@sha256:[a-f0-9]{64}' "$root/deploy/compose.yml"
-! grep -Eq '^(TCPSocket|TCPAddr|User) ' "$root/deploy/clamd.conf"
+! grep -Eq '^(TCPSocket|TCPAddr|User) ' "$root/deploy/clamd.conf" || exit 1
 ! grep -Eiq 'CREATE TABLE "?reports"?|ALTER TABLE "?reports"?' "$root/deploy/identity-schema.sql"
 export TEST_LOG="$fixture/docker.log" TEST_CURL_COUNT="$fixture/curl.count" TEST_GH_LOG="$fixture/gh.log"
 export TEST_SQL="$fixture/preflight.sql"
@@ -168,7 +168,7 @@ grep -F "$GITHUB_REF_NAME $WEB_IMAGE" "$fixture/state/current-release"
 ! cut -d '|' -f1 "$TEST_LOG" | grep -E 'down|up .* db|pull .*postgis'
 [[ $(stat -c '%a' "$fixture/deploy/.env") == 600 ]]
 # Med alla brytare avstängda rörs databasen och skannern inte.
-! grep -Eq 'psql|clamav|varplats_photos' "$TEST_LOG"
+! grep -Eq 'psql|clamav|varplats_photos' "$TEST_LOG" || exit 1
 
 all_flags=(AUTHENTICATION_ENABLED=true PUBLIC_BASE_URL=https://larbornhome.asuscomm.com:8010
     REPORTING_WORKFLOW_ENABLED=true REPORTING_PUBLIC_WRITES=true REPORTING_FLAGS_ENABLED=true
@@ -192,7 +192,7 @@ for grant in "('reports','INSERT')" "('report_submissions','UPDATE')" "('report_
     "('content_flags','UPDATE')" "('report_archives','DELETE')" "('report_archive_events','INSERT')"; do
     grep -Fq "$grant" "$TEST_SQL"
 done
-! grep -Eiq '^[[:space:]]*(INSERT|UPDATE|DELETE|GRANT|CREATE|ALTER|DROP)[[:space:]]' "$TEST_SQL"
+! grep -Eiq '^[[:space:]]*(INSERT|UPDATE|DELETE|GRANT|CREATE|ALTER|DROP)[[:space:]]' "$TEST_SQL" || exit 1
 grep -Fq 'varplats_photos:/photos' "$TEST_LOG"
 grep -Fq -- '--profile photos up -d --no-build --wait --wait-timeout 900 clamav' "$TEST_LOG"
 # Förkontroll och skanner kommer före bytet av webbcontainer.
@@ -210,14 +210,14 @@ grep -Fq 'kräver manuella databassteg som saknas' "$fixture/stderr"
 grep -Fq '  - migrering 20261119222822_ReportArchive' "$fixture/stderr"
 grep -Fx "WEB_IMAGE=$old_web" "$fixture/deploy/.env"
 grep -Fx 'previous release' "$fixture/state/current-release"
-! grep -Eq 'up -d --no-build --no-deps web|clamav' "$TEST_LOG"
+! grep -Eq 'up -d --no-build --no-deps web|clamav' "$TEST_LOG" || exit 1
 
 reset_fixture
 if env "${all_flags[@]}" FAIL_PREFLIGHT=1 bash "$fixture/bin/deploy-release.sh" 2> "$fixture/stderr"; then
     echo "A failed database preflight was not rejected" >&2; exit 1
 fi
 grep -Fq 'Förkontrollen av databasen misslyckades' "$fixture/stderr"
-! grep -q 'up -d --no-build --no-deps web' "$TEST_LOG"
+! grep -q 'up -d --no-build --no-deps web' "$TEST_LOG" || exit 1
 
 reset_fixture
 AUTHENTICATION_ENABLED=true PUBLIC_BASE_URL=https://larbornhome.asuscomm.com:8010 \
