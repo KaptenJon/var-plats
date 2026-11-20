@@ -146,6 +146,14 @@ public sealed class WebTests
     }
 
     [Fact]
+    public void ConfirmationWithdrawalRequiresTheWorkflow()
+    {
+        using var factory = CreateFactory("Production", new() { ["Reporting:ConfirmationWithdrawalEnabled"] = "true" });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Reporting:ConfirmationWithdrawalEnabled", exception.Message);
+    }
+
+    [Fact]
     public void FlagsRequireTheWorkflow()
     {
         using var factory = CreateFactory("Production", new() { ["Reporting:FlagsEnabled"] = "true" });
@@ -354,6 +362,7 @@ public sealed class WebTests
         var confirmedPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
         Assert.Contains("Bekräftad av ett annat konto", confirmedPage);
         Assert.Contains("Ditt konto har redan bekräftat", confirmedPage);
+        Assert.DoesNotContain("Ta tillbaka bekräftelse", confirmedPage);
         var json = await client.GetStringAsync("/api/reports");
         Assert.DoesNotContain(authorId.ToString(), json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(reporterId.ToString(), json, StringComparison.OrdinalIgnoreCase);
@@ -367,6 +376,51 @@ public sealed class WebTests
         var recoveryPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
         Assert.DoesNotContain("Publicera åtgärdsuppgift", recoveryPage);
         Assert.DoesNotContain("Bekräfta uppgiften</button>", recoveryPage);
+    }
+
+    [Fact]
+    public async Task ReportDetailsOfferWithdrawalOnlyToTheConfirmingAccountAndShowHistory()
+    {
+        var store = new ReportWorkflowTestStore();
+        var authorId = Guid.NewGuid();
+        var confirmerId = Guid.NewGuid();
+        var draft = ReportTests.ValidDraft();
+        draft.Title = "Syntetisk plats med återtagande";
+        var published = await store.SubmitAsync(authorId, draft);
+        Assert.True(await store.DecideAsync(published.Id, ReportReviewStatus.Approved));
+        Assert.True(await store.AddAsync(published.Id, authorId,
+            new ReportActionDraft { Description = "Syntetisk åtgärd för återtagande." }));
+        var action = Assert.Single(await store.ListAsync(published.Id, null));
+        Assert.Equal(ActionConfirmationResult.Confirmed, await store.ConfirmAsync(published.Id, action.Id, confirmerId));
+
+        await using var factory = CreateWorkflowFactory(store,
+            new() { ["Reporting:ConfirmationWithdrawalEnabled"] = "true" });
+        using var client = factory.CreateClient();
+        var url = $"/rapporter/{published.Id}";
+        var publicPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("Bekräftad av ett annat konto", publicPage);
+        Assert.DoesNotContain("Ta tillbaka bekräftelse", publicPage);
+
+        client.DefaultRequestHeaders.Add("X-Synthetic-Role", "Member");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", confirmerId.ToString());
+        var confirmerPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("Ta tillbaka bekräftelse</button>", confirmerPage);
+
+        client.DefaultRequestHeaders.Remove("X-Synthetic-Id");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", authorId.ToString());
+        Assert.DoesNotContain("Ta tillbaka bekräftelse",
+            WebUtility.HtmlDecode(await client.GetStringAsync(url)));
+
+        Assert.Equal(ConfirmationWithdrawalResult.Withdrawn,
+            await store.WithdrawConfirmationAsync(published.Id, action.Id, confirmerId));
+        client.DefaultRequestHeaders.Remove("X-Synthetic-Id");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", confirmerId.ToString());
+        var withdrawnPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("obekräftad", withdrawnPage);
+        Assert.Contains("1 bekräftelse har tagits tillbaka", withdrawnPage);
+        Assert.Contains("Ditt konto har tagit tillbaka sin bekräftelse", withdrawnPage);
+        Assert.DoesNotContain("Bekräfta uppgiften</button>", withdrawnPage);
+        Assert.DoesNotContain(confirmerId.ToString(), withdrawnPage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -527,8 +581,9 @@ public sealed class WebTests
                 services.AddSingleton<IStartupFilter>(new ClientAddressFilter(address ?? IPAddress.Loopback)));
         });
 
-    private static WebApplicationFactory<Program> CreateWorkflowFactory(ReportWorkflowTestStore store)
-        => CreateFactory("Development", new()
+    private static WebApplicationFactory<Program> CreateWorkflowFactory(
+        ReportWorkflowTestStore store, Dictionary<string, string?>? extra = null)
+        => CreateFactory("Development", new Dictionary<string, string?>(extra ?? new())
         {
             ["ConnectionStrings:varplats"] = "Host=127.0.0.1;Database=unused",
             ["Reporting:PublicWrites"] = "true",

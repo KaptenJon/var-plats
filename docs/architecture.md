@@ -87,6 +87,20 @@ Tillståndet ligger i `report_archives` och historiken i `report_archive_events`
 så den publika rapporttabellen ändras inte. Läsningar för karta, lista, API och
 närliggande tips utesluter arkiverade rapporter bara när inställningen är på.
 
+Återtagande av bekräftelser är en separat avstängd skiva med egen migration
+(`ConfirmationWithdrawals`) och egen inställning,
+`Reporting:ConfirmationWithdrawalEnabled`, som kräver arbetsflödet. Det konto som
+bekräftat kan ta tillbaka sin bekräftelse från rapportsidan efter ett
+bekräftelsesteg. Raden flyttas i en sats från `report_action_confirmations` till
+historiken `report_action_confirmation_withdrawals`, så statusberäkningen, som
+bara läser aktiva bekräftelser, inte behöver ändras. Omprövning efter
+återtagande nekas: en ny bekräftelse från samma konto skulle låta statusen växla
+fram och tillbaka och göra historiken svårare att tolka. Den som ångrar sig kan
+i stället anmäla innehållet eller be administratören ta bort åtgärden. Arkiverade
+rapporter nekar återtaganden när arkivering är på. Antalet återtaganden visas
+utan konto; kontoborttagning anonymiserar historiken. Delade `?rapport=`-länkar
+påverkas inte: kartmarkören får den omräknade statusen och sidan läses som förut.
+
 Den separat avstängda bildskivan tar emot högst en bild samtidigt med ett nytt
 inskick eller en ny åtgärd. Skanning och metadatafri omkodning sker innan
 texten sparas; filen placeras atomärt och bildmetadata och förälder sparas i
@@ -110,7 +124,9 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
 3. **Åtgärder:** den avstängda grundskivan sparar beskrivningar på publicerade
    rapporter; bevis, missbruksflöde och en säker lansering återstår.
 4. **Bekräftelser:** grundskivan tillåter ett annat konto och förbjuder
-   självbekräftelse; skydd mot manipulation, återtagande och tvister återstår.
+   självbekräftelse; återtagande med historik finns bakom
+   `Reporting:ConfirmationWithdrawalEnabled`. Skydd mot samordnad manipulation
+   och tvister återstår.
 5. **Poäng:** spårbar regelversion och händelsebok från godkända bekräftelser.
    Ingen belöning för riskfyllda insatser, dubbla konton eller rent antal klick.
 6. **Organisationer:** verifierade organisationer, geografiska områden och

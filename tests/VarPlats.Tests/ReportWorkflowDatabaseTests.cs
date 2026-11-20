@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using NetTopologySuite.Geometries;
 using Npgsql;
 using VarPlats.Core;
 using VarPlats.Web;
@@ -186,6 +187,8 @@ public sealed class ReportWorkflowDatabaseTests
             firstMember, secondMember, admin, firstUser.Id, secondUser.Id);
         await db.GetService<IMigrator>().MigrateAsync("20261119222822_ReportArchive");
         await CheckReportArchiveAsync(contexts, approved, firstMember, admin);
+        await db.GetService<IMigrator>().MigrateAsync("20261120080000_ConfirmationWithdrawals");
+        var withdrawal = await CheckConfirmationWithdrawalAsync(contexts, firstMember, secondMember, admin, firstUser.Id);
 
         await DeleteAccountViaEndpoint(connectionString, firstUser.Id, legacy.Id);
         await using (var check = contexts.CreateDbContext())
@@ -199,6 +202,14 @@ public sealed class ReportWorkflowDatabaseTests
             Assert.False(await check.ReportActionConfirmations.AnyAsync(item => item.AccountId == firstUser.Id));
             Assert.True(await check.ReportActionConfirmations.AnyAsync(item =>
                 item.ActionId == firstAuthorActionId && item.AccountId == secondUser.Id));
+        }
+        await using (var check = contexts.CreateDbContext())
+        {
+            // Account deletion keeps the anonymous withdrawal history; removing the report removes it.
+            Assert.Null((await check.ReportActionConfirmationWithdrawals.AsNoTracking()
+                .SingleAsync(item => item.ActionId == withdrawal.ActionId)).AccountId);
+            Assert.Equal(1, await check.Reports.Where(item => item.Id == withdrawal.ReportId).ExecuteDeleteAsync());
+            Assert.False(await check.ReportActionConfirmationWithdrawals.AnyAsync(item => item.ActionId == withdrawal.ActionId));
         }
         Assert.Contains(await publicStore.ListAsync(), item => item.Id == approved.Id);
         Assert.Equal(ReportStatus.Confirmed, (await enabledStore.GetAsync(approved.Id))!.Status);
@@ -383,6 +394,98 @@ public sealed class ReportWorkflowDatabaseTests
             INSERT INTO report_archive_events ("Id", "ReportId", "Kind", "Reason", "Note", "CreatedAt")
             VALUES ({badEvent}, {approved.Id}, 1, 0, NULL, now());
             """));
+    }
+
+    private static async Task<(Guid ReportId, Guid ActionId)> CheckConfirmationWithdrawalAsync(
+        TestContextFactory contexts, ClaimsPrincipal confirmer, ClaimsPrincipal author, ClaimsPrincipal admin,
+        Guid confirmerId)
+    {
+        var mode = new ReportingMode(false, false, true, true, false, true, true);
+        var switchedOff = new ReportingMode(false, false, true, true, false, true);
+        var actions = new ReportActionCommands(mode, new DatabaseReportActionStore(contexts, mode),
+            accountAccess: SyntheticReportAccountAccess.Instance);
+        var offActions = new ReportActionCommands(switchedOff, new DatabaseReportActionStore(contexts, switchedOff),
+            accountAccess: SyntheticReportAccountAccess.Instance);
+        var reports = new DatabaseReportStore(contexts, mode);
+        var archives = new ReportArchiveCommands(mode, new DatabaseReportArchiveStore(contexts, mode),
+            SyntheticReportAccountAccess.Instance);
+        var reportId = Guid.NewGuid();
+        await using (var setup = contexts.CreateDbContext())
+        {
+            setup.Reports.Add(new ReportEntity
+            {
+                Id = reportId,
+                Title = "Syntetisk rapport för återtagande",
+                Description = "Ett påhittat exempel utan personuppgifter.",
+                Category = ReportCategory.Other,
+                Location = new Point(11.9746, 57.7089) { SRID = 4326 },
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+            await setup.SaveChangesAsync();
+        }
+        Assert.True(await actions.AddAsync(author, reportId,
+            new ReportActionDraft { Description = "Syntetisk åtgärd för återtagande." }));
+        var action = Assert.Single(await actions.ListAsync(confirmer, reportId));
+        Assert.Equal(ActionConfirmationResult.Confirmed, await actions.ConfirmAsync(confirmer, reportId, action.Id));
+        Assert.Equal(ReportStatus.Confirmed, (await reports.GetAsync(reportId))!.Status);
+
+        // Only the confirming account can withdraw, and only while the switch allows it.
+        Assert.Equal(ConfirmationWithdrawalResult.NotConfirmed,
+            await actions.WithdrawConfirmationAsync(author, reportId, action.Id));
+        Assert.Equal(ConfirmationWithdrawalResult.NotConfirmed,
+            await actions.WithdrawConfirmationAsync(admin, reportId, action.Id));
+        Assert.Equal(ConfirmationWithdrawalResult.NotFound,
+            await actions.WithdrawConfirmationAsync(confirmer, Guid.NewGuid(), action.Id));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            offActions.WithdrawConfirmationAsync(confirmer, reportId, action.Id));
+
+        // Archived reports refuse the change, like new actions.
+        Assert.True(await archives.ArchiveAsync(admin, reportId, new ReportArchiveDraft()));
+        Assert.Equal(ConfirmationWithdrawalResult.Archived,
+            await actions.WithdrawConfirmationAsync(confirmer, reportId, action.Id));
+        Assert.Equal(ReportStatus.Confirmed, (await reports.GetAsync(reportId))!.Status);
+        Assert.True(await archives.RestoreAsync(admin, reportId));
+
+        // Concurrent repeats move the confirmation into the history exactly once.
+        var results = await Task.WhenAll(Enumerable.Range(0, 6)
+                .Select(_ => actions.WithdrawConfirmationAsync(confirmer, reportId, action.Id)))
+            .WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Single(results, result => result == ConfirmationWithdrawalResult.Withdrawn);
+        Assert.Equal(5, results.Count(result => result == ConfirmationWithdrawalResult.NotConfirmed));
+        Assert.Equal(ReportStatus.ActionDocumented, (await reports.GetAsync(reportId))!.Status);
+        Assert.Equal(ReportStatus.ActionDocumented,
+            Assert.Single(await reports.ListAsync(), item => item.Id == reportId).Status);
+        var listed = Assert.Single(await actions.ListAsync(confirmer, reportId));
+        Assert.Equal(0, listed.ConfirmationCount);
+        Assert.Equal(1, listed.WithdrawnCount);
+        Assert.False(listed.HasConfirmed);
+        Assert.True(listed.HasWithdrawn);
+        Assert.False(Assert.Single(await actions.ListAsync(author, reportId)).HasWithdrawn);
+        Assert.Equal(0, Assert.Single(await offActions.ListAsync(confirmer, reportId)).WithdrawnCount);
+        var publicActions = JsonSerializer.Serialize(await actions.ListAsync(new ClaimsPrincipal(), reportId));
+        Assert.DoesNotContain(confirmerId.ToString(), publicActions, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AccountId", publicActions, StringComparison.OrdinalIgnoreCase);
+        await using (var check = contexts.CreateDbContext())
+        {
+            var history = Assert.Single(await check.ReportActionConfirmationWithdrawals.AsNoTracking()
+                .Where(item => item.ActionId == action.Id).ToArrayAsync());
+            Assert.Equal(confirmerId, history.AccountId);
+            Assert.True(history.WithdrawnAt >= history.ConfirmedAt);
+            Assert.False(await check.ReportActionConfirmations.AnyAsync(item => item.ActionId == action.Id));
+        }
+
+        // Re-confirming after a withdrawal is refused while the switch is on.
+        Assert.Equal(ActionConfirmationResult.Withdrawn, await actions.ConfirmAsync(confirmer, reportId, action.Id));
+        Assert.Equal(ReportStatus.ActionDocumented, (await reports.GetAsync(reportId))!.Status);
+
+        // History cannot be withdrawn before it was confirmed.
+        await using var db = contexts.CreateDbContext();
+        var badHistory = Guid.NewGuid();
+        await Assert.ThrowsAsync<PostgresException>(() => db.Database.ExecuteSqlAsync($"""
+            INSERT INTO report_action_confirmation_withdrawals ("Id", "ActionId", "AccountId", "ConfirmedAt", "WithdrawnAt")
+            VALUES ({badHistory}, {action.Id}, NULL, now(), now() - interval '1 hour');
+            """));
+        return (reportId, action.Id);
     }
 
     private static async Task CheckCurrentAccountAccess(ServiceProvider provider)
