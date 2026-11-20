@@ -71,6 +71,28 @@ public sealed class PhotoWorkflowTests
     }
 
     [Fact]
+    public async Task PhotoUploadLimitStopsUploadsBeforeScanningOrSaving()
+    {
+        var input = SyntheticPngWithText("synthetic");
+        var scanner = new TestScanner();
+        var writer = new RecordingWriter();
+        using var processor = new PhotoProcessor(Enabled(), scanner);
+        var commands = new PhotoUploadCommands(Writable(), Enabled(), processor, writer,
+            SyntheticReportAccountAccess.Instance,
+            WriteRateLimitTests.Limiter(new WriteRateLimitTests.ManualTime(),
+                options => options.Photos = new() { PermitLimit = 1, WindowSeconds = 600 }));
+        var member = Account("Member");
+
+        await commands.SubmitReportAsync(member, ReportTests.ValidDraft(), new MemoryStream(input));
+        var exception = await Assert.ThrowsAsync<WriteRateLimitException>(() =>
+            commands.SubmitActionAsync(member, Guid.NewGuid(), ValidAction(), new MemoryStream(input)));
+
+        Assert.Equal(WriteKind.Photo, exception.Kind);
+        Assert.Equal(1, writer.Saved);
+        Assert.Equal(2, scanner.Inputs.Count);
+    }
+
+    [Fact]
     public async Task StoredBytesMustMatchTheRecordedFormatAndHash()
     {
         var image = PhotoSanitizer.Sanitize(SyntheticPngWithText("synthetic-private-marker")).Bytes.ToArray();

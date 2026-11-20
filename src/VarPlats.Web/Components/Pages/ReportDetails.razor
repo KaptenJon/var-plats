@@ -361,6 +361,7 @@
         }
         catch (ValidationException exception) { error = exception.Message; }
         catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att uppge en åtgärd."; }
+        catch (WriteRateLimitException exception) { error = exception.Message; }
         catch (PhotoUploadException exception) { error = exception.Message; }
         catch (PhotoSanitizationException exception)
         {
@@ -399,6 +400,7 @@
             };
         }
         catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att bekräfta."; }
+        catch (WriteRateLimitException exception) { error = exception.Message; }
         catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
         {
             Logger.LogError(exception, "Åtgärdsuppgiften kunde inte bekräftas.");
@@ -486,6 +488,7 @@
         }
         catch (ValidationException exception) { error = exception.Message; }
         catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att anmäla innehåll."; }
+        catch (WriteRateLimitException exception) { error = exception.Message; }
         catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
         {
             Logger.LogError(exception, "Anmälan kunde inte sparas.");

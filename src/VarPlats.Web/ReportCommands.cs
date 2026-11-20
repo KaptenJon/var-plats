@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using VarPlats.Core;
 using VarPlats.Web.Photos;
@@ -6,7 +7,7 @@ namespace VarPlats.Web;
 
 public sealed class ReportCommands(
     IReportStore store, ReportingMode mode, IReportWorkflowStore? workflow = null, IPhotoCleanup? photos = null,
-    IReportAccountAccess? accountAccess = null)
+    IReportAccountAccess? accountAccess = null, WriteRateLimiter? rateLimiter = null)
 {
     public async Task<Report> AddAsync(
         ClaimsPrincipal user, ReportDraft draft, CancellationToken cancellationToken = default)
@@ -18,6 +19,9 @@ public sealed class ReportCommands(
             var rights = await VerifyAsync(user, cancellationToken);
             if (!CanReport(user) || !rights.CanReport || rights.AccountId != UserId(user))
                 throw new UnauthorizedAccessException("Inloggning krävs för att rapportera.");
+            ArgumentNullException.ThrowIfNull(draft);
+            Validator.ValidateObject(draft, new ValidationContext(draft), validateAllProperties: true);
+            rateLimiter?.Acquire(rights.AccountId!.Value, WriteKind.Report);
             return await Workflow().SubmitAsync(rights.AccountId!.Value, draft, cancellationToken);
         }
         return await store.AddAsync(draft, cancellationToken);

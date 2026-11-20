@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using VarPlats.Core;
+using VarPlats.Web;
 using VarPlats.Web.Photos;
 using Xunit;
 
@@ -585,6 +586,65 @@ public sealed class WebTests
         using var factory = CreateFactory("Production", new() { [key] = "true" });
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
         Assert.Contains("endast tillåtna", exception.Message);
+    }
+
+    [Fact]
+    public async Task ReportsApiIsLimitedPerClientOnlyWhenRateLimitsAreOn()
+    {
+        await using (var unlimited = CreateFactory())
+        {
+            using var client = unlimited.CreateClient();
+            for (var i = 0; i < 5; i++)
+                Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/reports")).StatusCode);
+        }
+
+        await using var factory = CreateFactory(overrides: new()
+        {
+            ["Reporting:Demo"] = "true",
+            ["Reporting:RateLimits:Enabled"] = "true",
+            ["Reporting:RateLimits:Api:PermitLimit"] = "2",
+            ["Reporting:RateLimits:Api:WindowSeconds"] = "3600"
+        });
+        using var limited = factory.CreateClient();
+        Assert.Equal(HttpStatusCode.OK, (await limited.GetAsync("/api/reports")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await limited.GetAsync("/api/reports?south=59&west=18&north=60&east=19")).StatusCode);
+        var rejected = await limited.GetAsync("/api/reports");
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.True(rejected.Headers.RetryAfter?.Delta > TimeSpan.Zero);
+        // The page itself is not behind the API limit.
+        Assert.Equal(HttpStatusCode.OK, (await limited.GetAsync("/")).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Reporting:RateLimits:Reports:PermitLimit", "0")]
+    [InlineData("Reporting:RateLimits:Api:WindowSeconds", "0")]
+    [InlineData("Reporting:RateLimits:Photos:WindowSeconds", "86401")]
+    public void StartupRejectsInvalidRateLimitsEvenWhenTheSwitchIsOff(string key, string value)
+    {
+        using var factory = CreateFactory("Production", new() { [key] = value });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Reporting:RateLimits:", exception.Message);
+    }
+
+    [Fact]
+    public async Task RegisteredCommandsUseTheSharedWriteLimiter()
+    {
+        var store = new ReportWorkflowTestStore();
+        await using var factory = CreateWorkflowFactory(store).WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Reporting:RateLimits:Enabled", "true");
+            builder.UseSetting("Reporting:RateLimits:Reports:PermitLimit", "1");
+        });
+        _ = factory.CreateClient();
+        var memberId = Guid.NewGuid();
+        var member = WriteRateLimitTests.Account(memberId);
+
+        using (var scope = factory.Services.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<ReportCommands>().AddAsync(member, ReportTests.ValidDraft());
+        using (var scope = factory.Services.CreateScope())
+            await Assert.ThrowsAsync<WriteRateLimitException>(() =>
+                scope.ServiceProvider.GetRequiredService<ReportCommands>().AddAsync(member, ReportTests.ValidDraft()));
+        Assert.Single(await store.ListOwnAsync(memberId));
     }
 
     [Fact]

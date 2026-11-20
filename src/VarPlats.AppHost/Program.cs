@@ -5,7 +5,10 @@ var postgres = builder.AddPostgres("postgres")
     .WithDataVolume()
     .WithBindMount("../../deploy/sql", "/docker-entrypoint-initdb.d");
 var database = postgres.AddDatabase("varplats");
-builder.AddProject<Projects.VarPlats_Web>("web", launchProfileName: "database")
+builder.AddDotnetProject(
+        "web",
+        "../VarPlats.Web/VarPlats.Web.csproj",
+        options => options.LaunchProfileName = "database")
     .WithReference(database)
     .WaitFor(database);
 builder.Build().Run();

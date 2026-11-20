@@ -48,10 +48,23 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 | Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd i förhandsversionen | Tvister, återtagande och skydd mot samordnad manipulation |
 | Kod för att anmäla rapporter och åtgärdstexter till administratörer, avstängd bakom `Reporting:FlagsEnabled` | Överklaganden och skydd mot falska anmälningar |
 | Kod för att arkivera och återställa rapporter, avstängd bakom `Reporting:ArchiveEnabled` | Sammanslagning av dubbletter |
+| Skrivgränser per konto och gräns för läs-API:t, avstängda bakom `Reporting:RateLimits:Enabled` | Delade gränser mellan flera instanser och skydd mot många konton (Sybil) |
 | Kod för poäng vid bekräftade åtgärder, hjärtan och poänggåvor, avstängd bakom `Reporting:PointsEnabled` | Bedrägeribedömning, spärrar och administratörsåterkallelse av poäng |
 | EF Core/PostGIS-lagring i lokalt utvecklingsläge | Organisationsbevakning |
 | Läs-API med kartvyfilter, livs-/beredskapskontroller, OTLP vid konfiguration | Betalning, native-app och offlinekartor |
 | Installerbart webb/PWA-skal; kräver nätanslutning | |
+
+Skrivgränser (`Reporting:RateLimits`) är avstängda som standard. När
+`Enabled` är `true` begränsas varje konto per kommando och tidsfönster:
+rapportinskick, åtgärdsuppgifter, bekräftelser, anmälningar och
+bilduppladdningar (`PermitLimit` och `WindowSeconds` under `Reports`,
+`Actions`, `Confirmations`, `Flags` och `Photos`). `Api` begränsar
+`GET /api/reports` per klientadress och svarar `429` med `Retry-After`.
+Standardvärdena står i `appsettings.json`; ogiltiga värden stoppar uppstarten
+även när funktionen är av. Gränserna gäller i en process och nollställs vid
+omstart. Bakom Caddy ser appen bara proxyns adress, eftersom `X-Forwarded-For`
+inte litas på, så API-gränsen blir där i praktiken en gemensam gräns för alla
+klienter.
 
 Produktion är **endast läsning som standard** och kräver databas. Kod för
 manuell rapportgranskning finns, men migrationsschemat är inte installerat i
