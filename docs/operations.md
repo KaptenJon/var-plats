@@ -171,7 +171,7 @@ kontot har tillgång till och måste roteras före utgång. Begränsa därför r
 och värdåtkomst. Den godkända release-workflowen aktiverar autentisering och,
 efter ägarbeslutet 2026-11-20, `REPORTING_WORKFLOW_ENABLED`,
 `REPORTING_PUBLIC_WRITES`, `REPORTING_FLAGS_ENABLED`, `REPORTING_ARCHIVE_ENABLED`,
-`RATE_LIMITS_ENABLED` och `PHOTOS_ENABLED`. Värdena skickas till containern vid
+`REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED`, `RATE_LIMITS_ENABLED` och `PHOTOS_ENABLED`. Värdena skickas till containern vid
 varje deploy och skrivs inte till `.env`; en manuell `docker compose up` utan dem
 startar alltså webben skrivskyddad. Den läser Caddys exakta IPv4-gateway
 från det befintliga Vår plats-webbcontainerns nätverk; den gissar inte proxy-IP.
@@ -321,6 +321,7 @@ databasstegen nedan.
 Ägaren beslutade 2026-11-20 att Pi-releasen ska slå på alla brytare som finns på
 `main`: `Reporting:WorkflowEnabled`, `Reporting:PublicWrites`,
 `Reporting:FlagsEnabled`, `Reporting:ArchiveEnabled`,
+`Reporting:ConfirmationWithdrawalEnabled` (tillagd efter att #36 mergats),
 `Reporting:RateLimits:Enabled` och `Photos:Enabled` (utöver den redan påslagna
 autentiseringen). Brytare som ännu inte finns på `main` ingår inte.
 Startkontrollerna i `Program.cs` är oförändrade.
@@ -337,7 +338,7 @@ Filerna i ordning, alla granskade i samma PR som brytarna:
 
 | Fil | Innehåll |
 |---|---|
-| `deploy/pi-workflow-migrations.sql` | Idempotent `dotnet ef migrations script --idempotent` från `20261108035738_IdentityAccountActivity` (Pi:ns nuvarande nivå via `identity-schema.sql`) till `20261119222822_ReportArchive`: granskning, åtgärder/bekräftelser, bilder (med triggrar), flaggor och arkiv. Ett test jämför filen med EF-migreringarna. |
+| `deploy/pi-workflow-migrations.sql` | Idempotent `dotnet ef migrations script --idempotent` från `20261108035738_IdentityAccountActivity` (Pi:ns nuvarande nivå via `identity-schema.sql`) till `20261120080000_ConfirmationWithdrawals`: granskning, åtgärder/bekräftelser, bilder (med triggrar), flaggor, arkiv och historik för återtagna bekräftelser. Ett test jämför filen med EF-migreringarna. |
 | `deploy/pi-public-write-role.sql` | INSERT/DELETE på `reports` för `varplats_reader`. |
 | `deploy/pi-workflow-grants.sql` | Minsta behörigheter per ny tabell för `varplats_reader` (se kommentarer i filen). Ingen UPDATE eller DELETE där koden inte behöver det; bildmetadata är oföränderlig. |
 
@@ -378,7 +379,7 @@ compose=(docker compose --project-name varplats --env-file deploy/.env
      -c 'SELECT "MigrationId" FROM "__EFMigrationsHistory" ORDER BY 1;'
    ```
 
-   Listan ska sluta med `20261119222822_ReportArchive` (åtta rader totalt).
+   Listan ska sluta med `20261120080000_ConfirmationWithdrawals` (nio rader totalt).
    Den nuvarande webben fungerar vidare: med brytarna av läses inga nya tabeller.
 3. **Grants.** Kör skrivgranten och sedan arbetsflödesgranten.
 
@@ -398,8 +399,9 @@ compose=(docker compose --project-name varplats --env-file deploy/.env
      `clamav` som `healthy`;
    - logga in, skicka en syntetisk rapport med en syntetisk bild och godkänn
      den som admin; kontrollera att den syns på kartan och i listan;
-   - lägg en åtgärd från ett konto och bekräfta den från ett annat; flagga den
-     och avfärda flaggan som admin;
+   - lägg en åtgärd från ett konto och bekräfta den från ett annat; ta tillbaka
+     bekräftelsen och kontrollera att samma konto inte kan bekräfta igen; flagga
+     åtgärden och avfärda flaggan som admin;
    - arkivera och återställ rapporten;
    - skicka många inskick i följd och kontrollera att skrivgränsen ger ett
      svenskt meddelande;
@@ -429,8 +431,8 @@ compose=(docker compose --project-name varplats --env-file deploy/.env
 Brytarna är på, men följande är **inte klart** och är fortfarande ägarens ansvar
 innan riktiga användare bjuds in:
 
-- [ ] Integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor
-      och arkivhistorik, inklusive fritext som kan innehålla personuppgifter.
+- [ ] Integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor,
+      arkivhistorik och historik över återtagna bekräftelser, inklusive fritext som kan innehålla personuppgifter.
 - [ ] Villkor och integritetsinformation uppdaterade och godkända för rapportering,
       åtgärder, bilder och anmälningar.
 - [ ] Bemannad granskningskö med svarstid, även för direktpublicerade åtgärder och

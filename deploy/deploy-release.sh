@@ -9,7 +9,7 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ${WEB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-deploy-web@sha256:[a-f0-9]{64}$ ]]
 [[ ${DB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-postgis@sha256:[a-f0-9]{64}$ ]]
 for flag in AUTHENTICATION_ENABLED REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_WRITES \
-    REPORTING_FLAGS_ENABLED REPORTING_ARCHIVE_ENABLED RATE_LIMITS_ENABLED PHOTOS_ENABLED; do
+    REPORTING_FLAGS_ENABLED REPORTING_ARCHIVE_ENABLED REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED \n    RATE_LIMITS_ENABLED PHOTOS_ENABLED; do
     [[ ${!flag:-false} =~ ^(true|false)$ ]] || {
         echo "$flag måste vara true eller false." >&2
         exit 1
@@ -92,6 +92,11 @@ if [[ ${REPORTING_ARCHIVE_ENABLED:-false} == true ]]; then
     required_migrations+=(20261119222822_ReportArchive)
     required_grants+=(report_archives:SELECT report_archives:INSERT report_archives:DELETE
         report_archive_events:SELECT report_archive_events:INSERT)
+fi
+if [[ ${REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED:-false} == true ]]; then
+    required_migrations+=(20261120080000_ConfirmationWithdrawals)
+    required_grants+=(report_action_confirmations:DELETE
+        report_action_confirmation_withdrawals:SELECT report_action_confirmation_withdrawals:INSERT)
 fi
 if ((${#required_migrations[@]} + ${#required_grants[@]} > 0)); then
     sql_list() { local IFS=,; printf '%s' "$*"; }

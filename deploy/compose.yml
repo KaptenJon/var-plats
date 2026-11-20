@@ -38,6 +38,7 @@ services:
       Reporting__WorkflowEnabled: ${REPORTING_WORKFLOW_ENABLED:-false}
       Reporting__FlagsEnabled: ${REPORTING_FLAGS_ENABLED:-false}
       Reporting__ArchiveEnabled: ${REPORTING_ARCHIVE_ENABLED:-false}
+      Reporting__ConfirmationWithdrawalEnabled: ${REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED:-false}
       Reporting__RateLimits__Enabled: ${RATE_LIMITS_ENABLED:-false}
       Photos__Enabled: ${PHOTOS_ENABLED:-false}
       Photos__StoragePath: /var/lib/varplats/photos

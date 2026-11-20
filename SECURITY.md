@@ -9,7 +9,8 @@ Använd aldrig verkliga personuppgifter i demo eller test. Den ägargodkända
 Ägaren beslutade 2026-11-20 att release-workflowen ska slå på alla brytare som
 finns på `main`: `Reporting:WorkflowEnabled`, `Reporting:PublicWrites`,
 `Reporting:FlagsEnabled`, `Reporting:ArchiveEnabled`,
-`Reporting:RateLimits:Enabled` och `Photos:Enabled`. Det är det ägarbeslut som
+`Reporting:ConfirmationWithdrawalEnabled`, `Reporting:RateLimits:Enabled` och
+`Photos:Enabled`. Det är det ägarbeslut som
 punkterna nedan kräver före aktivering. Standardvärdena i koden, `compose.yml`
 och `.env.example` är fortfarande `false`, och startkontrollerna i `Program.cs`
 är oförändrade. Migreringar och grants tillämpas inte automatiskt; ägaren kör dem
@@ -21,7 +22,8 @@ gäller det tiden före detta beslut och fortfarande standardkonfigurationen.
 Beslutet gör **inte** lanseringsgrinden nedan uppfylld. Öppna punkter som koden
 inte löser:
 
-- [ ] integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor och arkiv;
+- [ ] integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor, arkiv
+      och historik över återtagna bekräftelser;
 - [ ] uppdaterade och godkända villkor och integritetsinformation för dessa flöden;
 - [ ] bemannad granskningskö, även för direktpublicerade åtgärder och anmälningar;
 - [ ] provad backup och återställning av databas och bildvolym tillsammans;
@@ -174,7 +176,9 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   eller `deploy/pi-workflow-grants.sql`; de körs manuellt av ägaren. Releasen gör
   bara en skrivskyddad kontroll av att de finns. `pi-workflow-grants.sql` ger
   `varplats_reader` endast de rättigheter koden använder per tabell (ingen
-  UPDATE/DELETE på bilder, bekräftelser eller arkivhändelser).
+  UPDATE/DELETE på bilder eller arkivhändelser, ingen UPDATE på bekräftelser och
+  bara SELECT/INSERT på historiken över återtagna bekräftelser; DELETE på
+  bekräftelser ges för återtagandet).
 - Lokal skrivning kräver Development och loopback. Aldrig en publik dev-proxy.
 - Gemensam servervalidering, EF-parametrisering, textkodade Leaflet-popupfält
   och Blazors normala HTML-kodning. Inget användarinnehåll går till `MarkupString`.

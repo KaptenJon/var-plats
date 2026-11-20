@@ -10,7 +10,7 @@ public sealed class PiMigrationScriptTests
 {
     // The Pi's Identity schema comes from deploy/identity-schema.sql, which ends at this migration.
     private const string PiBaseMigration = "20261108035738_IdentityAccountActivity";
-    private const string LatestReleasedMigration = "20261119222822_ReportArchive";
+    private const string LatestReleasedMigration = "20261120080000_ConfirmationWithdrawals";
 
     [Fact]
     public void CommittedPiMigrationScriptMatchesEfMigrations()
@@ -39,7 +39,8 @@ public sealed class PiMigrationScriptTests
         foreach (var table in new[]
         {
             "report_submissions", "report_actions", "report_action_confirmations", "report_photos",
-            "content_flags", "report_archives"
+            "content_flags", "report_archives", "report_archive_events",
+            "report_action_confirmation_withdrawals"
         })
             Assert.Contains(table, grants, StringComparison.Ordinal);
         Assert.DoesNotContain("GRANT ALL", grants, StringComparison.OrdinalIgnoreCase);

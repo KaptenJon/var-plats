@@ -57,7 +57,8 @@ jobs:
           test "$(docker compose -f deploy/compose.yml --profile photos config --services | sort | tr '\n' ' ')" = "clamav db web "
           plain=$(docker compose -f deploy/compose.yml config --format json)
           for key in Reporting__PublicWrites Reporting__WorkflowEnabled Reporting__FlagsEnabled \
-              Reporting__ArchiveEnabled Reporting__RateLimits__Enabled Photos__Enabled; do
+              Reporting__ArchiveEnabled Reporting__ConfirmationWithdrawalEnabled \
+              Reporting__RateLimits__Enabled Photos__Enabled; do
             test "$(jq -r ".services.web.environment.$key" <<< "$plain")" = "false"
           done
           released=$(REPORTING_PUBLIC_WRITES=true PHOTOS_ENABLED=true \
@@ -156,15 +157,19 @@ jobs:
           DECLARE
               item record;
           BEGIN
-              IF (SELECT count(*) FROM "__EFMigrationsHistory") <> 8 THEN
-                  RAISE EXCEPTION 'Expected all eight EF migrations to be recorded';
+              IF (SELECT count(*) FROM "__EFMigrationsHistory") <> 9 THEN
+                  RAISE EXCEPTION 'Expected all nine EF migrations to be recorded';
               END IF;
               FOR item IN SELECT * FROM (VALUES
                   ('report_submissions', 'SELECT', true), ('report_submissions', 'INSERT', true),
                   ('report_submissions', 'UPDATE', true), ('report_submissions', 'DELETE', false),
                   ('report_actions', 'INSERT', true), ('report_actions', 'DELETE', true),
                   ('report_actions', 'UPDATE', false),
-                  ('report_action_confirmations', 'INSERT', true), ('report_action_confirmations', 'DELETE', false),
+                  ('report_action_confirmations', 'INSERT', true), ('report_action_confirmations', 'DELETE', true),
+                  ('report_action_confirmations', 'UPDATE', false),
+                  ('report_action_confirmation_withdrawals', 'INSERT', true),
+                  ('report_action_confirmation_withdrawals', 'UPDATE', false),
+                  ('report_action_confirmation_withdrawals', 'DELETE', false),
                   ('report_photos', 'INSERT', true), ('report_photos', 'UPDATE', false),
                   ('report_photos', 'DELETE', false),
                   ('content_flags', 'INSERT', true), ('content_flags', 'UPDATE', true),

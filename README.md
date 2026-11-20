@@ -74,7 +74,7 @@ läsas utan det nya schemat. Demo eller lokala skrivningar i Production stoppar 
 
 **Ägarbeslut 2026-11-20:** den taggade Pi-releasen slår på alla brytare som finns
 på `main` – granskning, publika skrivningar, åtgärder och bekräftelser, återtagande
-av bekräftelser, anmälningar,
+av bekräftelser (`Reporting:ConfirmationWithdrawalEnabled`), anmälningar,
 arkivering, skrivgränser och bilder. `deploy/compose.yml` och `.env.example`
 behåller `false`, så en vanlig Compose-körning är fortfarande skrivskyddad.
 Migreringarna tillämpas aldrig automatiskt: ägaren tar backup och kör

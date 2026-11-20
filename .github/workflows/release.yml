@@ -72,6 +72,7 @@ jobs:
           REPORTING_PUBLIC_WRITES: "true"
           REPORTING_FLAGS_ENABLED: "true"
           REPORTING_ARCHIVE_ENABLED: "true"
+          REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED: "true"
           RATE_LIMITS_ENABLED: "true"
           PHOTOS_ENABLED: "true"
           ADMIN_GITHUB_ID: "10761546"

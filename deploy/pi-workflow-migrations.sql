@@ -338,3 +338,45 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120080000_ConfirmationWithdrawals') THEN
+    CREATE TABLE report_action_confirmation_withdrawals (
+        "Id" uuid NOT NULL,
+        "ActionId" uuid NOT NULL,
+        "AccountId" uuid,
+        "ConfirmedAt" timestamp with time zone NOT NULL,
+        "WithdrawnAt" timestamp with time zone NOT NULL,
+        CONSTRAINT "PK_report_action_confirmation_withdrawals" PRIMARY KEY ("Id"),
+        CONSTRAINT "CK_report_action_confirmation_withdrawals_Order" CHECK ("WithdrawnAt" >= "ConfirmedAt"),
+        CONSTRAINT "FK_report_action_confirmation_withdrawals_AspNetUsers_AccountId" FOREIGN KEY ("AccountId") REFERENCES "AspNetUsers" ("Id") ON DELETE SET NULL,
+        CONSTRAINT "FK_report_action_confirmation_withdrawals_report_actions_ActionId" FOREIGN KEY ("ActionId") REFERENCES report_actions ("Id") ON DELETE CASCADE
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120080000_ConfirmationWithdrawals') THEN
+    CREATE INDEX "IX_report_action_confirmation_withdrawals_AccountId" ON report_action_confirmation_withdrawals ("AccountId");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120080000_ConfirmationWithdrawals') THEN
+    CREATE INDEX "IX_report_action_confirmation_withdrawals_ActionId_AccountId" ON report_action_confirmation_withdrawals ("ActionId", "AccountId");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120080000_ConfirmationWithdrawals') THEN
+    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+    VALUES ('20261120080000_ConfirmationWithdrawals', '11.0.0-rc.3.26522.148');
+    END IF;
+END $EF$;
+COMMIT;
+
