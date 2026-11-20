@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-unset AUTHENTICATION_ENABLED PUBLIC_BASE_URL FAIL_HEALTH FAIL_AUTH AUTH_ROUTE_STATUS FAIL_PREVIOUS_IMAGE
+unset AUTHENTICATION_ENABLED PUBLIC_BASE_URL FAIL_HEALTH FAIL_AUTH AUTH_ROUTE_STATUS FAIL_PREVIOUS_IMAGE \
+    REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_WRITES REPORTING_FLAGS_ENABLED REPORTING_ARCHIVE_ENABLED \
+    RATE_LIMITS_ENABLED PHOTOS_ENABLED MOCK_PREFLIGHT_MISSING FAIL_PREFLIGHT
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
@@ -25,25 +27,50 @@ for expected in \
     'REGISTRY_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}' \
     'deploy/verify-release-image.sh' \
     'AUTHENTICATION_ENABLED: "true"' \
-    'REPORTING_PUBLIC_WRITES: "false"' \
+    'REPORTING_WORKFLOW_ENABLED: "true"' \
+    'REPORTING_PUBLIC_WRITES: "true"' \
+    'REPORTING_FLAGS_ENABLED: "true"' \
+    'REPORTING_ARCHIVE_ENABLED: "true"' \
+    'RATE_LIMITS_ENABLED: "true"' \
+    'PHOTOS_ENABLED: "true"' \
     'ADMIN_GITHUB_ID: "10761546"' \
     'install -m 0644 "$GITHUB_WORKSPACE/deploy/compose.yml"' \
     'install -m 0644 "$GITHUB_WORKSPACE/deploy/pi.override.yml"' \
+    'install -m 0644 "$GITHUB_WORKSPACE/deploy/clamd.conf"' \
+    'install -m 0644 "$GITHUB_WORKSPACE/deploy/freshclam.conf"' \
     'install -m 0755 "$GITHUB_WORKSPACE/deploy/deploy-release.sh"' \
     'deploy/identity-schema.sql' \
     'deploy/pi-identity-role.sql' \
     'AUTHENTICATION_TRUSTED_PROXY_IP'; do
     grep -Fq "$expected" "$release_workflow"
 done
-! grep -Fq 'deploy/pi-public-write-role.sql' "$release_workflow"
+# Migreringar och grants är manuella steg; releasen får aldrig tillämpa dem.
+for manual in pi-public-write-role.sql pi-workflow-migrations.sql pi-workflow-grants.sql; do
+    ! grep -Fq "$manual" "$release_workflow"
+    ! grep -Fq "$manual" "$root/deploy/deploy-release.sh"
+done
+# En vanlig Compose-körning förblir skrivskyddad.
+for flag in AUTHENTICATION_ENABLED REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_WRITES REPORTING_FLAGS_ENABLED \
+    REPORTING_ARCHIVE_ENABLED RATE_LIMITS_ENABLED PHOTOS_ENABLED; do
+    grep -Fq "\${$flag:-false}" "$root/deploy/compose.yml"
+    grep -Fxq "$flag=false" "$root/deploy/.env.example"
+done
+grep -Eq 'clamav-debian:[0-9.]+@sha256:[a-f0-9]{64}' "$root/deploy/compose.yml"
+! grep -Eq '^(TCPSocket|TCPAddr|User) ' "$root/deploy/clamd.conf"
 ! grep -Eiq 'CREATE TABLE "?reports"?|ALTER TABLE "?reports"?' "$root/deploy/identity-schema.sql"
 export TEST_LOG="$fixture/docker.log" TEST_CURL_COUNT="$fixture/curl.count" TEST_GH_LOG="$fixture/gh.log"
+export TEST_SQL="$fixture/preflight.sql"
 cat > "$fixture/mocks/docker" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s | %s | %s\n' "$*" "${WEB_IMAGE:-}" "${DB_IMAGE:-}" >> "$TEST_LOG"
 if [[ ${1:-} == image && ${2:-} == inspect ]]; then
     [[ ${FAIL_PREVIOUS_IMAGE:-0} != 1 ]] || exit 1
     printf '%s\n' "${MOCK_IMAGE_REVISION:-$EXPECTED_SOURCE_SHA}"
+fi
+if [[ "$*" == *"exec -T db psql"* ]]; then
+    cat > "$TEST_SQL"
+    [[ ${FAIL_PREFLIGHT:-0} != 1 ]] || exit 3
+    [[ -z ${MOCK_PREFLIGHT_MISSING:-} ]] || printf '%s\n' "$MOCK_PREFLIGHT_MISSING"
 fi
 MOCK
 cat > "$fixture/mocks/curl" <<'MOCK'
@@ -111,7 +138,7 @@ reset_fixture() {
     touch "$fixture/state/database-ready"
     printf 'previous release\n' > "$fixture/state/current-release"
     : > "$TEST_LOG"
-    rm -f "$TEST_CURL_COUNT"
+    rm -f "$TEST_CURL_COUNT" "$TEST_SQL"
 }
 
 reset_fixture
@@ -140,6 +167,57 @@ grep -F "$GITHUB_REF_NAME $WEB_IMAGE" "$fixture/state/current-release"
 [[ $(grep -c 'up -d --no-build --no-deps web' "$TEST_LOG") == 1 ]]
 ! cut -d '|' -f1 "$TEST_LOG" | grep -E 'down|up .* db|pull .*postgis'
 [[ $(stat -c '%a' "$fixture/deploy/.env") == 600 ]]
+# Med alla brytare avstängda rörs databasen och skannern inte.
+! grep -Eq 'psql|clamav|varplats_photos' "$TEST_LOG"
+
+all_flags=(AUTHENTICATION_ENABLED=true PUBLIC_BASE_URL=https://larbornhome.asuscomm.com:8010
+    REPORTING_WORKFLOW_ENABLED=true REPORTING_PUBLIC_WRITES=true REPORTING_FLAGS_ENABLED=true
+    REPORTING_ARCHIVE_ENABLED=true RATE_LIMITS_ENABLED=true PHOTOS_ENABLED=true)
+
+reset_fixture
+if env REPORTING_PUBLIC_WRITES=yes bash "$fixture/bin/deploy-release.sh"; then
+    echo "An invalid flag value was not rejected" >&2; exit 1
+fi
+[[ ! -s "$TEST_LOG" ]]
+
+reset_fixture
+env "${all_flags[@]}" bash "$fixture/bin/deploy-release.sh"
+grep -F "$GITHUB_REF_NAME $WEB_IMAGE" "$fixture/state/current-release"
+grep -Fq 'BEGIN READ ONLY;' "$TEST_SQL"
+for migration in 20261108154722_ReportReviewWorkflow 20261108162158_ReportActionsAndConfirmations \
+    20261108164953_ReportPhotos 20261119061342_ContentFlags 20261119222822_ReportArchive; do
+    grep -Fq "('$migration')" "$TEST_SQL"
+done
+for grant in "('reports','INSERT')" "('report_submissions','UPDATE')" "('report_photos','INSERT')" \
+    "('content_flags','UPDATE')" "('report_archives','DELETE')" "('report_archive_events','INSERT')"; do
+    grep -Fq "$grant" "$TEST_SQL"
+done
+! grep -Eiq '^[[:space:]]*(INSERT|UPDATE|DELETE|GRANT|CREATE|ALTER|DROP)[[:space:]]' "$TEST_SQL"
+grep -Fq 'varplats_photos:/photos' "$TEST_LOG"
+grep -Fq -- '--profile photos up -d --no-build --wait --wait-timeout 900 clamav' "$TEST_LOG"
+# Förkontroll och skanner kommer före bytet av webbcontainer.
+preflight_line=$(grep -n 'exec -T db psql' "$TEST_LOG" | cut -d: -f1)
+clamav_line=$(grep -n -- '--profile photos up' "$TEST_LOG" | cut -d: -f1)
+web_line=$(grep -n 'up -d --no-build --no-deps web' "$TEST_LOG" | cut -d: -f1)
+((preflight_line < clamav_line && clamav_line < web_line))
+
+reset_fixture
+if env "${all_flags[@]}" MOCK_PREFLIGHT_MISSING='migrering 20261119222822_ReportArchive' \
+    bash "$fixture/bin/deploy-release.sh" 2> "$fixture/stderr"; then
+    echo "A deployment with missing migrations was not rejected" >&2; exit 1
+fi
+grep -Fq 'kräver manuella databassteg som saknas' "$fixture/stderr"
+grep -Fq '  - migrering 20261119222822_ReportArchive' "$fixture/stderr"
+grep -Fx "WEB_IMAGE=$old_web" "$fixture/deploy/.env"
+grep -Fx 'previous release' "$fixture/state/current-release"
+! grep -Eq 'up -d --no-build --no-deps web|clamav' "$TEST_LOG"
+
+reset_fixture
+if env "${all_flags[@]}" FAIL_PREFLIGHT=1 bash "$fixture/bin/deploy-release.sh" 2> "$fixture/stderr"; then
+    echo "A failed database preflight was not rejected" >&2; exit 1
+fi
+grep -Fq 'Förkontrollen av databasen misslyckades' "$fixture/stderr"
+! grep -q 'up -d --no-build --no-deps web' "$TEST_LOG"
 
 reset_fixture
 AUTHENTICATION_ENABLED=true PUBLIC_BASE_URL=https://larbornhome.asuscomm.com:8010 \
@@ -172,4 +250,4 @@ if FAIL_HEALTH=1 bash "$fixture/bin/deploy-release.sh"; then
 fi
 grep -Fx "WEB_IMAGE=$old_private_web" "$fixture/deploy/.env"
 grep -F " | $old_private_web | $old_db" "$TEST_LOG"
-echo "Deployment validation, database isolation, and web rollback tests passed."
+echo "Deployment validation, feature preflight, database isolation, and web rollback tests passed."

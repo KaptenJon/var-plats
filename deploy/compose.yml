@@ -35,6 +35,13 @@ services:
       Map__TileUrl: ${TILE_URL:?Set TILE_URL in the untracked .env file}
       Authentication__Enabled: ${AUTHENTICATION_ENABLED:-false}
       Reporting__PublicWrites: ${REPORTING_PUBLIC_WRITES:-false}
+      Reporting__WorkflowEnabled: ${REPORTING_WORKFLOW_ENABLED:-false}
+      Reporting__FlagsEnabled: ${REPORTING_FLAGS_ENABLED:-false}
+      Reporting__ArchiveEnabled: ${REPORTING_ARCHIVE_ENABLED:-false}
+      Reporting__RateLimits__Enabled: ${RATE_LIMITS_ENABLED:-false}
+      Photos__Enabled: ${PHOTOS_ENABLED:-false}
+      Photos__StoragePath: /var/lib/varplats/photos
+      Photos__ScannerSocketPath: /run/varplats/scanner/clamd.sock
       Authentication__PublicBaseUrl: ${PUBLIC_BASE_URL:-}
       Authentication__Passkeys__ServerDomain: ${PASSKEY_SERVER_DOMAIN:-}
       Authentication__Passkeys__Origins__0: ${PASSKEY_ORIGIN:-}
@@ -58,6 +65,44 @@ services:
       - /tmp
     volumes:
       - dataprotection:/home/app/.aspnet/DataProtection-Keys
+      - photos:/var/lib/varplats/photos
+      - scanner-socket:/run/varplats/scanner
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+  clamav:
+    # Endast med profilen "photos". clamav/clamav saknar ARM64; clamav-debian 1.5 är
+    # pinnad till sin linux/arm64-manifestdigest (verifierad mot registret 2026-11-20).
+    image: ${CLAMAV_IMAGE:-clamav/clamav-debian:1.5@sha256:0470bfdde27380e21e196dd631a66a893729744843c077a460f80510de8bedbd}
+    profiles: [photos]
+    platform: linux/arm64
+    # Samma UID som webben, så att socketen kan vara privat (0600) för båda.
+    user: "1654:1654"
+    init: true
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        if [ ! -f /var/lib/clamav/main.cvd ] && [ ! -f /var/lib/clamav/main.cld ]; then
+            freshclam --foreground --stdout --config-file=/etc/clamav/freshclam.conf
+        fi
+        freshclam --daemon --foreground --stdout --checks=2 --config-file=/etc/clamav/freshclam.conf &
+        exec clamd --foreground --config-file=/etc/clamav/clamd.conf
+    volumes:
+      - ./clamd.conf:/etc/clamav/clamd.conf:ro
+      - ./freshclam.conf:/etc/clamav/freshclam.conf:ro
+      - clamav-signatures:/var/lib/clamav
+      - scanner-socket:/run/varplats/scanner
+    healthcheck:
+      test: ["CMD", "clamdscan", "--config-file=/etc/clamav/clamd.conf", "--ping=1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
+    read_only: true
+    tmpfs:
+      - /tmp
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
@@ -68,3 +113,6 @@ secrets:
 volumes:
   postgres-data:
   dataprotection:
+  photos:
+  scanner-socket:
+  clamav-signatures:

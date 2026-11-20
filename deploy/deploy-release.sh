@@ -8,6 +8,13 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ${GITHUB_REF_NAME:-} =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
 [[ ${WEB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-deploy-web@sha256:[a-f0-9]{64}$ ]]
 [[ ${DB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-postgis@sha256:[a-f0-9]{64}$ ]]
+for flag in AUTHENTICATION_ENABLED REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_WRITES \
+    REPORTING_FLAGS_ENABLED REPORTING_ARCHIVE_ENABLED RATE_LIMITS_ENABLED PHOTOS_ENABLED; do
+    [[ ${!flag:-false} =~ ^(true|false)$ ]] || {
+        echo "$flag måste vara true eller false." >&2
+        exit 1
+    }
+done
 mkdir -p "$root/state"
 exec 9>"$root/state/deployment.lock"
 flock -n 9
@@ -58,6 +65,74 @@ if [[ ! -f "$root/state/database-ready" ]]; then
     sed "s|^DB_IMAGE=.*|DB_IMAGE=$DB_IMAGE|" "$config" > "$temporary"
     mv "$temporary" "$config"
     touch "$root/state/database-ready"
+fi
+
+# Migreringar och grants tillämpas aldrig automatiskt. Kontrollera dem skrivskyddat
+# innan webben byts, så att en påslagen brytare inte möter ett saknat schema.
+required_migrations=()
+required_grants=()
+if [[ ${REPORTING_WORKFLOW_ENABLED:-false} == true ]]; then
+    required_migrations+=(20261108154722_ReportReviewWorkflow 20261108162158_ReportActionsAndConfirmations)
+    required_grants+=(report_submissions:SELECT report_actions:SELECT report_action_confirmations:SELECT)
+fi
+if [[ ${REPORTING_PUBLIC_WRITES:-false} == true ]]; then
+    required_grants+=(reports:INSERT reports:DELETE
+        report_submissions:INSERT report_submissions:UPDATE
+        report_actions:INSERT report_actions:DELETE report_action_confirmations:INSERT)
+fi
+if [[ ${PHOTOS_ENABLED:-false} == true ]]; then
+    required_migrations+=(20261108164953_ReportPhotos)
+    required_grants+=(report_photos:SELECT report_photos:INSERT)
+fi
+if [[ ${REPORTING_FLAGS_ENABLED:-false} == true ]]; then
+    required_migrations+=(20261119061342_ContentFlags)
+    required_grants+=(content_flags:SELECT content_flags:INSERT content_flags:UPDATE)
+fi
+if [[ ${REPORTING_ARCHIVE_ENABLED:-false} == true ]]; then
+    required_migrations+=(20261119222822_ReportArchive)
+    required_grants+=(report_archives:SELECT report_archives:INSERT report_archives:DELETE
+        report_archive_events:SELECT report_archive_events:INSERT)
+fi
+if ((${#required_migrations[@]} + ${#required_grants[@]} > 0)); then
+    sql_list() { local IFS=,; printf '%s' "$*"; }
+    migration_values=() grant_values=()
+    for migration in "${required_migrations[@]}"; do
+        [[ $migration =~ ^[0-9]{14}_[A-Za-z]+$ ]]
+        migration_values+=("('$migration')")
+    done
+    for grant in "${required_grants[@]}"; do
+        [[ $grant =~ ^[a-z_]+:[A-Z]+$ ]]
+        grant_values+=("('${grant%%:*}','${grant#*:}')")
+    done
+    preflight_sql="BEGIN READ ONLY;
+SELECT 'migrering ' || m FROM (VALUES $(sql_list "${migration_values[@]:-('')}")) AS v(m)
+WHERE m <> '' AND NOT EXISTS (SELECT 1 FROM \"__EFMigrationsHistory\" WHERE \"MigrationId\" = m);
+SELECT 'grant ' || p || ' på ' || t || ' till varplats_reader' FROM (VALUES $(sql_list "${grant_values[@]:-('','')}")) AS v(t, p)
+WHERE t <> '' AND (to_regclass(t) IS NULL OR NOT has_table_privilege('varplats_reader', to_regclass(t), p));
+ROLLBACK;"
+    if ! missing=$(printf '%s\n' "$preflight_sql" | "${compose[@]}" exec -T db \
+        psql -U varplats -d varplats -qtA -v ON_ERROR_STOP=1); then
+        echo "Förkontrollen av databasen misslyckades; webben byttes inte." >&2
+        exit 1
+    fi
+    if [[ -n $missing ]]; then
+        echo "Påslagna brytare kräver manuella databassteg som saknas (se docs/operations.md):" >&2
+        sed 's/^/  - /' <<< "$missing" >&2
+        echo "Webben byttes inte. Ta backup, kör pi-workflow-migrations.sql och grants, deploya sedan igen." >&2
+        exit 1
+    fi
+fi
+
+if [[ ${PHOTOS_ENABLED:-false} == true ]]; then
+    # Nya namngivna volymer ägs av root; webben och clamd kör båda som UID 1654 och kräver
+    # privata kataloger. Signaturvolymen fylls från imagen (UID 1000) och måste kunna skrivas.
+    docker run --rm --user 0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+        --security-opt no-new-privileges:true --read-only --network none \
+        --volume varplats_photos:/photos --volume varplats_scanner-socket:/scanner \
+        --volume varplats_clamav-signatures:/signatures \
+        --entrypoint sh "$WEB_IMAGE" -c \
+        'chown 1654:1654 /photos /scanner && chmod 0700 /photos /scanner && chown -R 1654:1654 /signatures'
+    "${compose[@]}" --profile photos up -d --no-build --wait --wait-timeout 900 clamav
 fi
 
 bind_address=$(sed -n 's/^WEB_BIND_ADDRESS=//p' "$config")
