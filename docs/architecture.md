@@ -30,6 +30,11 @@ kontrollen. Läs-API:t tar `south`, `west`, `north` och `east` tillsammans och s
 med `X-Reports-Truncated`; utan dem, och om kartan inte laddas, visas de senaste 200
 rapporterna totalt. Paginering finns inte ännu.
 
+Kartvyn kan delas: adressfältet följer kartan som `?lat=&lon=&z=` och
+`?rapport=<id>` öppnar kartan på en publicerad rapport. Värdena tolkas av
+`MapView` och ogiltiga värden ger startvyn. Länken innehåller bara en plats som
+någon valt på kartan, aldrig besökarens position, och ingen position sparas.
+
 När någon fyller i en ny rapport visar formuläret upp till fem publicerade
 rapporter inom 50 meter från vald plats, närmast först, så att dubbletter kan
 upptäckas före inskick. Databasen använder `ST_DWithin` på geography-kolumnen,

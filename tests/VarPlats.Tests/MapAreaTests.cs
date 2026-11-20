@@ -89,6 +89,33 @@ public sealed class MapAreaTests
     }
 }
 
+public sealed class MapViewTests
+{
+    [Fact]
+    public void ValidQueryValuesAreParsedAndRounded()
+    {
+        Assert.True(MapView.TryParse("59.3325123", "18.0630987", "16", out var view));
+        Assert.Equal(new MapView(59.33251, 18.0631, 16), view);
+    }
+
+    [Theory]
+    [InlineData(null, "18", "14")]
+    [InlineData("59", "18", null)]
+    [InlineData("59,33", "18", "14")]
+    [InlineData("NaN", "18", "14")]
+    [InlineData("86", "18", "14")]
+    [InlineData("59", "181", "14")]
+    [InlineData("59", "18", "2")]
+    [InlineData("59", "18", "20")]
+    [InlineData("59", "18", "14.5")]
+    [InlineData("59", "18", "-1")]
+    public void InvalidQueryValuesFallBackToTheDefaultView(string? latitude, string? longitude, string? zoom)
+    {
+        Assert.False(MapView.TryParse(latitude, longitude, zoom, out var view));
+        Assert.Equal(MapView.Default, view);
+    }
+}
+
 public sealed class ReportProximityTests
 {
     [Fact]

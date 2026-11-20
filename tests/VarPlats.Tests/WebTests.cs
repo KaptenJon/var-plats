@@ -54,6 +54,30 @@ public sealed class WebTests
             (await client.GetAsync("/api/reports?south=abc&west=18&north=59&east=19")).StatusCode);
     }
 
+    [Theory]
+    [InlineData("/?rapport=00000000-0000-0000-0000-000000000002", "Länkad rapport: En bänk behöver ses över.")]
+    [InlineData("/?lat=57.7&lon=11.97&z=15", "Delad kartvy · inte din position")]
+    [InlineData("/?lat=999&lon=11.97&z=15", "Stockholm · startområde · inte din position")]
+    [InlineData("/?rapport=inte-ett-id", "Stockholm · startområde · inte din position")]
+    [InlineData("/?rapport=00000000-0000-0000-0000-0000000000ff", "finns inte eller är inte publicerad")]
+    public async Task ShareableLinksOpenTheLinkedViewOrFallBack(string url, string expected)
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        Assert.Contains(expected, WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync()));
+    }
+
+    [Fact]
+    public async Task ReportPageLinksToTheReportOnTheMap()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var html = await client.GetStringAsync("/rapporter/00000000-0000-0000-0000-000000000002");
+        Assert.Contains("href=\"/?rapport=00000000-0000-0000-0000-000000000002\"", html);
+    }
+
     [Fact]
     public async Task LoginPageKeepsExternalSignInDisabledUntilConfigured()
     {
