@@ -10,7 +10,7 @@ sammanhållen kompatibilitetsändring.
 | Container-avbilder (bygg / körning) | dotnet/sdk:11.0.100 / dotnet/aspnet:11.0.0, låsta OCI-digests i Dockerfile |
 | ASP.NET Core / EF Core | 11.0.0-rc.3.26522.148 |
 | Npgsql EF Core + NetTopologySuite | 11.0.0-rc.3 |
-| Aspire AppHost SDK / hosting | 13.6.4 |
+| Aspire hosting (`Aspire.Hosting.*`, utan AppHost SDK) | 17.0.0 |
 | Radzen.Blazor | 12.1.10 |
 | OpenTelemetry | 1.20.1 |
 | Leaflet | 1.9.4 |
@@ -19,7 +19,10 @@ sammanhållen kompatibilitetsändring.
 
 Npgsql RC3:s nuspec kräver exakt EF RC3 ovan. Radzen har net10-assets som används
 av net11; solutionens build/test kontrollerar kompatibilitet. Aspire använder
-senaste verifierade stabila paket och AppHost SDK, inte en antagen ".NET 11 Aspire".
+senaste verifierade stabila paket, inte en antagen ".NET 11 Aspire". AppHost är ett
+vanligt `Microsoft.NET.Sdk`-projekt (det föråldrade `Aspire.AppHost.Sdk` används inte)
+och lägger till webbprojektet med `AddDotnetProject(namn, sökväg)` från
+`Aspire.Hosting.Dotnet`, inte via `ProjectReference`/`AddProject<T>`.
 
 NuGet-versioner finns i `Directory.Packages.props` och hela beroendeträdet i
 `packages.lock.json` per projekt. `global.json` tillåter inte tyst SDK-rollforward.
