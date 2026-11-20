@@ -104,6 +104,7 @@ public sealed class DatabasePointsStore(
             return GiftResult.OverDailyLimit;
 
         // Both rows come from the action row in one statement, so a concurrently removed action writes nothing.
+        // The NULLs are cast because UNION ALL would otherwise resolve them as text.
         var transferId = Guid.NewGuid();
         var sentId = Guid.NewGuid();
         var receivedId = Guid.NewGuid();
@@ -112,12 +113,14 @@ public sealed class DatabasePointsStore(
         var inserted = await db.Database.ExecuteSqlAsync($"""
             INSERT INTO "points_events" ("Id", "AccountId", "Amount", "Reason", "ActionId", "ConfirmerId",
                 "TransferId", "ReversesEventId", "ReversalCause", "RuleVersion", "CreatedAt")
-            SELECT {sentId}, {giverId}, {negative}, 2, a."Id", NULL, {transferId}, NULL, NULL, {ruleVersion}, {now}
+            SELECT {sentId}, {giverId}, {negative}, 2, a."Id", NULL::uuid, {transferId}, NULL::uuid, NULL::integer,
+                {ruleVersion}, {now}
             FROM "report_actions" a
             WHERE a."Id" = {actionId} AND a."ReportId" = {reportId} AND a."AuthorId" IS NOT NULL
               AND a."AuthorId" <> {giverId}
             UNION ALL
-            SELECT {receivedId}, a."AuthorId", {amount}, 3, a."Id", NULL, {transferId}, NULL, NULL, {ruleVersion}, {now}
+            SELECT {receivedId}, a."AuthorId", {amount}, 3, a."Id", NULL::uuid, {transferId}, NULL::uuid, NULL::integer,
+                {ruleVersion}, {now}
             FROM "report_actions" a
             WHERE a."Id" = {actionId} AND a."ReportId" = {reportId} AND a."AuthorId" IS NOT NULL
               AND a."AuthorId" <> {giverId};
