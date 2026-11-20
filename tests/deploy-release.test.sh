@@ -74,6 +74,9 @@ if [[ ${1:-} == image && ${2:-} == inspect ]]; then
     [[ ${FAIL_PREVIOUS_IMAGE:-0} != 1 ]] || exit 1
     printf '%s\n' "${MOCK_IMAGE_REVISION:-$EXPECTED_SOURCE_SHA}"
 fi
+if [[ "$*" == *"config --images clamav"* ]]; then
+    printf '%s\n' "${MOCK_CLAMAV_IMAGE-clamav/clamav-debian:1.5@sha256:$(printf '1%.0s' {1..64})}"
+fi
 if [[ "$*" == *"exec -T db psql"* ]]; then
     cat > "$TEST_SQL"
     [[ ${FAIL_PREFLIGHT:-0} != 1 ]] || exit 3
@@ -217,17 +220,31 @@ done
 ! grep -Eiq '^[[:space:]]*(INSERT|UPDATE|DELETE|GRANT|CREATE|ALTER|DROP)[[:space:]]' "$TEST_SQL" || exit 1
 grep -Fq 'varplats_photos:/photos' "$TEST_LOG"
 grep -Fq -- '--profile photos up -d --no-build --wait --wait-timeout 900 clamav' "$TEST_LOG"
-# Signaturvolymen byter ägare i clamav-tjänsten själv (efter Dockers kopiering från imagen),
-# inte via webbimagen, och före start av clamd.
+# Signaturvolymen byter ägare med den pinnade clamav-imagen på /var/lib/clamav (efter Dockers
+# kopiering från imagen), utan nätverk och utan andra volymer, och före start av clamd.
 ! grep -Fq 'varplats_clamav-signatures:/signatures' "$TEST_LOG" || exit 1
-grep -Fq -- '--entrypoint chown clamav -R 1654:1654 /var/lib/clamav' "$TEST_LOG"
-chown_line=$(grep -n -- '--entrypoint chown clamav' "$TEST_LOG" | cut -d: -f1)
+chown_run=$(grep -F -- '--entrypoint chown clamav/clamav-debian:1.5@sha256:' "$TEST_LOG")
+[[ $chown_run == *'--network none'* && $chown_run == *'--read-only'* && $chown_run == *'--cap-drop ALL'* ]]
+[[ $chown_run == *'--volume varplats_clamav-signatures:/var/lib/clamav --entrypoint'* ]]
+[[ $chown_run != *scanner* && $chown_run != *photos* ]]
+[[ $chown_run == *'-R 1654:1654 /var/lib/clamav |'* ]]
+chown_line=$(grep -n -- '--entrypoint chown clamav/' "$TEST_LOG" | cut -d: -f1)
 ((chown_line < $(grep -n -- '--profile photos up' "$TEST_LOG" | cut -d: -f1)))
 # Förkontroll och skanner kommer före bytet av webbcontainer.
 preflight_line=$(grep -n 'exec -T db psql' "$TEST_LOG" | cut -d: -f1)
 clamav_line=$(grep -n -- '--profile photos up' "$TEST_LOG" | cut -d: -f1)
 web_line=$(grep -n 'up -d --no-build --no-deps web' "$TEST_LOG" | cut -d: -f1)
 ((preflight_line < clamav_line && clamav_line < web_line))
+
+# En clamav-image som inte är en pinnad clamav-debian-digest stoppar deployen före start.
+reset_fixture
+if env "${all_flags[@]}" MOCK_CLAMAV_IMAGE='ghcr.io/example/other:latest' \
+    bash "$fixture/bin/deploy-release.sh" 2> "$fixture/stderr"; then
+    echo "An unpinned clamav image was not rejected" >&2; exit 1
+fi
+grep -Fq 'pinnad clamav/clamav-debian-digest' "$fixture/stderr"
+! grep -Fq -- '--profile photos up' "$TEST_LOG" || exit 1
+! grep -Fq 'up -d --no-build --no-deps web' "$TEST_LOG" || exit 1
 
 reset_fixture
 if env "${all_flags[@]}" MOCK_PREFLIGHT_MISSING='migrering 20261119222822_ReportArchive' \
