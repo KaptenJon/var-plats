@@ -150,13 +150,26 @@ fi
 
 if [[ ${PHOTOS_ENABLED:-false} == true ]]; then
     # Nya namngivna volymer ägs av root; webben och clamd kör båda som UID 1654 och kräver
-    # privata kataloger. Signaturvolymen fylls från imagen (UID 1000) och måste kunna skrivas.
+    # privata kataloger.
     docker run --rm --user 0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
         --security-opt no-new-privileges:true --read-only --network none \
         --volume varplats_photos:/photos --volume varplats_scanner-socket:/scanner \
-        --volume varplats_clamav-signatures:/signatures \
         --entrypoint sh "$WEB_IMAGE" -c \
-        'chown 1654:1654 /photos /scanner && chmod 0700 /photos /scanner && chown -R 1654:1654 /signatures'
+        'chown 1654:1654 /photos /scanner && chmod 0700 /photos /scanner'
+    # Signaturvolymen fylls från clamav-imagen (UID 1000) första gången den monteras på
+    # /var/lib/clamav, och Docker sätter då imagens ägare även om volymen redan bytt ägare.
+    # Byt därför ägare med clamav-imagen monterad på samma sökväg, efter kopieringen, så att
+    # clamd och freshclam (UID 1654) kan skriva. Hjälpcontainern får bara signaturvolymen,
+    # inget nätverk och bara en pinnad clamav-debian-image.
+    clamav_image=$("${compose[@]}" --profile photos config --images clamav)
+    if [[ ! $clamav_image =~ ^clamav/clamav-debian:[0-9.]+@sha256:[a-f0-9]{64}$ ]]; then
+        echo "clamav-imagen måste vara en pinnad clamav/clamav-debian-digest." >&2
+        exit 1
+    fi
+    docker run --rm --user 0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+        --security-opt no-new-privileges:true --read-only --network none \
+        --volume varplats_clamav-signatures:/var/lib/clamav \
+        --entrypoint chown "$clamav_image" -R 1654:1654 /var/lib/clamav
     "${compose[@]}" --profile photos up -d --no-build --wait --wait-timeout 900 clamav
 fi
 
