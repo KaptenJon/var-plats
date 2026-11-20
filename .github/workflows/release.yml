@@ -84,6 +84,8 @@ jobs:
           RATE_LIMITS_ENABLED: "true"
           PHOTOS_ENABLED: "true"
           ADMIN_GITHUB_ID: "10761546"
+          # Ägarens verifierade e-post (repository-/environment-secret), så att adressen inte står i Git.
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
           PUBLIC_BASE_URL: https://larbornhome.asuscomm.com:8010
           PASSKEY_SERVER_DOMAIN: larbornhome.asuscomm.com
           PASSKEY_ORIGIN: https://larbornhome.asuscomm.com:8010

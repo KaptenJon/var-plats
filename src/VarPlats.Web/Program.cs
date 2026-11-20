@@ -69,6 +69,7 @@ photoOptions.Validate(reportingMode, authenticationEnabled,
     builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot"));
 
 var adminGitHubId = builder.Configuration["Authentication:AdminGitHubId"];
+var adminEmails = AdminEmails.Parse(builder.Configuration[AdminEmails.ConfigurationKey]);
 var trustedProxyValue = builder.Configuration["Authentication:TrustedProxyIp"];
 var passkeyServerDomain = builder.Configuration["Authentication:Passkeys:ServerDomain"];
 var passkeyOrigins = builder.Configuration.GetSection("Authentication:Passkeys:Origins").Get<string[]>() ?? [];
@@ -175,6 +176,9 @@ if (authenticationEnabled)
                 .GetRequiredService<IdentityAccountActivityStore>();
             await activityStore.RecordSignInAsync(
                 userId, DateTimeOffset.UtcNow, context.HttpContext.RequestAborted);
+            await adminEmails.PromoteAsync(principal, userId,
+                context.HttpContext.RequestServices.GetRequiredService<UserManager<IdentityUser<Guid>>>(),
+                context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("AdminEmails"));
         };
     });
     builder.Services.Configure<CookieAuthenticationOptions>(IdentityConstants.ExternalScheme, options =>
