@@ -287,16 +287,15 @@ if (authenticationEnabled)
             options.Scope.Remove("profile");
             options.ClaimActions.Clear();
             options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "sub");
+            options.Events.OnRemoteFailure = ExternalSignInFailures.HandleAsync;
             options.Events.OnCreatingTicket = context =>
             {
                 if (!context.User.TryGetProperty("email_verified", out var verified)
                     || verified.ValueKind != JsonValueKind.True
                     || !context.User.TryGetProperty("email", out var emailElement)
                     || string.IsNullOrWhiteSpace(emailElement.GetString()))
-                {
-                    context.Fail("A verified Google email address is required.");
-                    return Task.CompletedTask;
-                }
+                    throw new ExternalSignInException(ExternalSignInFailures.Email,
+                        "Google gav ingen verifierad e-postadress.");
 
                 var identity = context.Identity!;
                 identity.AddClaim(new(ClaimTypes.Email, emailElement.GetString()!));
@@ -316,6 +315,7 @@ if (authenticationEnabled)
             options.BackchannelHttpHandler = new GitHubUserAgentHandler();
             options.Scope.Add("read:user");
             options.Scope.Add("user:email");
+            options.Events.OnRemoteFailure = ExternalSignInFailures.HandleAsync;
             options.Events.OnCreatingTicket = async context =>
             {
                 using var userRequest = new HttpRequestMessage(HttpMethod.Get, options.UserInformationEndpoint);
@@ -324,10 +324,8 @@ if (authenticationEnabled)
                 using var userResponse = await context.Backchannel.SendAsync(
                     userRequest, context.HttpContext.RequestAborted);
                 if (!userResponse.IsSuccessStatusCode)
-                {
-                    context.Fail("GitHub account information could not be verified.");
-                    return;
-                }
+                    throw new ExternalSignInException(ExternalSignInFailures.Provider,
+                        $"GitHub /user svarade {(int)userResponse.StatusCode}.");
 
                 using var userDocument = await JsonDocument.ParseAsync(
                     await userResponse.Content.ReadAsStreamAsync(context.HttpContext.RequestAborted),
@@ -336,21 +334,19 @@ if (authenticationEnabled)
                 if (!user.TryGetProperty("id", out var idElement)
                     || idElement.ValueKind != JsonValueKind.Number
                     || !idElement.TryGetInt64(out var verifiedGitHubId))
-                {
-                    context.Fail("GitHub returned an invalid account identifier.");
-                    return;
-                }
+                    throw new ExternalSignInException(ExternalSignInFailures.Provider,
+                        "GitHub /user saknade ett giltigt konto-id.");
 
                 using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/user/emails");
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
                 request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.AccessToken);
                 using var response = await context.Backchannel.SendAsync(request, context.HttpContext.RequestAborted);
+                // 403/404 här betyder oftast att appen saknar rätt att läsa e-postadresser
+                // (GitHub App utan behörigheten "Email addresses", eller scope user:email nekat).
                 if (!response.IsSuccessStatusCode)
-                {
-                    context.Fail("GitHub did not provide a verifiable email address.");
-                    return;
-                }
+                    throw new ExternalSignInException(ExternalSignInFailures.Email,
+                        $"GitHub /user/emails svarade {(int)response.StatusCode}.");
 
                 using var document = await JsonDocument.ParseAsync(
                     await response.Content.ReadAsStreamAsync(context.HttpContext.RequestAborted),
@@ -363,10 +359,8 @@ if (authenticationEnabled)
                     .Select(address => address.GetProperty("email").GetString())
                     .FirstOrDefault(email => !string.IsNullOrWhiteSpace(email));
                 if (verifiedEmail is null)
-                {
-                    context.Fail("GitHub did not provide a verified primary email address.");
-                    return;
-                }
+                    throw new ExternalSignInException(ExternalSignInFailures.Email,
+                        "GitHub-kontot saknar en verifierad primär e-postadress.");
 
                 var identity = context.Identity!;
                 identity.AddClaim(new(ClaimTypes.NameIdentifier,
@@ -463,6 +457,10 @@ if (authenticationEnabled)
         HttpContext context, IAntiforgery antiforgery, SignInManager<IdentityUser<Guid>> signInManager) =>
     {
         await antiforgery.ValidateRequestAsync(context);
+        // Ett inloggat konto länkar leverantörer under Inloggningsmetoder; en vanlig inloggning
+        // ovanpå en befintlig session kan inte slutföras (återanropet väntar sig då en länkning).
+        if (context.User.Identity?.IsAuthenticated == true)
+            return Results.LocalRedirect("/account/connections?error=signed-in");
         var properties = signInManager.ConfigureExternalAuthenticationProperties(
             GoogleDefaults.AuthenticationScheme, "/auth/external/callback");
         return Results.Challenge(properties, [GoogleDefaults.AuthenticationScheme]);
@@ -471,6 +469,8 @@ if (authenticationEnabled)
         HttpContext context, IAntiforgery antiforgery, SignInManager<IdentityUser<Guid>> signInManager) =>
     {
         await antiforgery.ValidateRequestAsync(context);
+        if (context.User.Identity?.IsAuthenticated == true)
+            return Results.LocalRedirect("/account/connections?error=signed-in");
         var properties = signInManager.ConfigureExternalAuthenticationProperties("GitHub", "/auth/external/callback");
         return Results.Challenge(properties, ["GitHub"]);
     }).AllowAnonymous();
@@ -498,7 +498,13 @@ if (authenticationEnabled)
         var existingUser = await userManager.GetUserAsync(context.User);
         var externalInfo = await signInManager.GetExternalLoginInfoAsync(existingUser?.Id.ToString());
         if (externalInfo is null)
-            return Results.LocalRedirect("/login?error=external");
+        {
+            loggerFactory.CreateLogger("ExternalLogin").LogWarning(
+                "Extern inloggning saknade en giltig extern identitet (befintlig session: {SignedIn}).",
+                existingUser is not null);
+            return Results.LocalRedirect(existingUser is not null
+                ? "/account/connections?error=link" : "/login?error=external");
+        }
 
         if (existingUser is not null)
         {

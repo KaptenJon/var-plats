@@ -8,6 +8,7 @@
 @using Microsoft.AspNetCore.WebUtilities
 @inject UserManager<IdentityUser<Guid>> UserManager
 @inject IJSRuntime JS
+@inject VarPlats.Web.ReportingMode Mode
 
 <PageTitle>Inloggningsmetoder – Vår plats</PageTitle>
 <main class="document">
@@ -56,7 +57,14 @@
     @if (!recoveryOnly)
     {
         <h2>Ta bort konto</h2>
-        <p>Kontot och dess inloggningsmetoder tas bort från den aktiva databasen. Inga rapporter är kopplade till kontot. Säkerhetskopior kan finnas kvar tills de raderas enligt sin lagringstid.</p>
+        @if (Mode.WorkflowEnabled)
+        {
+            <p>Kontot och dess inloggningsmetoder tas bort från den aktiva databasen, liksom kontots bekräftelser, flaggor, hjärtan och poäng. Rapporter, åtgärdsbeskrivningar och bilder som kontot har skickat finns kvar utan koppling till kontot. Säkerhetskopior kan finnas kvar tills de raderas enligt sin lagringstid.</p>
+        }
+        else
+        {
+            <p>Kontot och dess inloggningsmetoder tas bort från den aktiva databasen. Inga rapporter är kopplade till kontot. Säkerhetskopior kan finnas kvar tills de raderas enligt sin lagringstid.</p>
+        }
         <form action="/auth/account/delete" method="post" onsubmit="return confirm('Ta bort kontot och alla dess inloggningsmetoder? Detta kan inte ångras.');">
             <AntiforgeryToken />
             <button type="submit" class="text-button">Ta bort mitt konto</button>
@@ -92,7 +100,8 @@
             ("1", _, _, _) => "Inloggningsmetoden har länkats.",
             (_, "1", _, _) => "E-postadressen är bekräftad. Lägg nu till en passkey eller säkerhetsnyckel.",
             (_, _, "1", _) => "Återställningen lyckades. Lägg till en ny passkey eller säkerhetsnyckel.",
-            (_, _, _, "link") => "Inloggningsmetoden kunde inte länkas. Kontrollera att den inte redan används.",
+            (_, _, _, "link") => "Inloggningsmetoden kunde inte länkas. Kontrollera att den inte redan används och att kontot hos leverantören har en verifierad primär e-postadress.",
+            (_, _, _, "signed-in") => "Du är redan inloggad. Länka Google eller GitHub här, eller logga ut först för att byta konto.",
             _ => null
         };
     }

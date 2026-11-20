@@ -192,7 +192,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                         }
                     </ul>
                 }
-                <div class="next-step"><h3>Från observation till omtanke</h3><p>@(Mode.WorkflowEnabled ? "Åtgärder och bekräftelser är uppgifter från konton, inte en kontroll av platsen eller arbetets säkerhet." : "Åtgärdsuppgifter och bekräftelser är avstängda i den här miljön.") Inga poäng delas ut.</p></div>
+                <div class="next-step"><h3>Från observation till omtanke</h3><p>@(Mode.WorkflowEnabled ? "Åtgärder och bekräftelser är uppgifter från konton, inte en kontroll av platsen eller arbetets säkerhet." : "Åtgärdsuppgifter och bekräftelser är avstängda i den här miljön.") @(Mode.Points ? "Poäng ges bara när ett annat konto bekräftar en åtgärd – aldrig för antal klick eller för riskfyllda insatser." : "Inga poäng delas ut.")</p></div>
             }
             <p class="small official-note">Vår plats är inte en officiell kommunal felanmälan. Kontakta ansvarig aktör när det behövs.</p>
         </aside>
