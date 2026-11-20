@@ -9,7 +9,8 @@ namespace VarPlats.Web;
 /// report and action commands, whose deletes cascade to the flags.
 /// </summary>
 public sealed class ContentFlagCommands(
-    ReportingMode mode, IContentFlagStore? store = null, IReportAccountAccess? accountAccess = null)
+    ReportingMode mode, IContentFlagStore? store = null, IReportAccountAccess? accountAccess = null,
+    WriteRateLimiter? rateLimiter = null)
 {
     public async Task<FlagResult> FlagAsync(ClaimsPrincipal user, Guid reportId, Guid? actionId,
         ContentFlagDraft draft, CancellationToken cancellationToken = default)
@@ -21,6 +22,7 @@ public sealed class ContentFlagCommands(
         if (!ReportCommands.CanReport(user) || !rights.CanReport || rights.AccountId != ReportCommands.UserId(user))
             throw new UnauthorizedAccessException("Ett behörigt konto krävs för att anmäla innehåll.");
         draft.Validated();
+        rateLimiter?.Acquire(rights.AccountId!.Value, WriteKind.Flag);
         return await Store().FlagAsync(reportId, actionId, rights.AccountId!.Value, draft, cancellationToken);
     }
 

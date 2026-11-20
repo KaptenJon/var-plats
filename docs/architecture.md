@@ -87,6 +87,17 @@ Tillståndet ligger i `report_archives` och historiken i `report_archive_events`
 så den publika rapporttabellen ändras inte. Läsningar för karta, lista, API och
 närliggande tips utesluter arkiverade rapporter bara när inställningen är på.
 
+Skrivgränser är en egen avstängd skiva utan migration, `Reporting:RateLimits`.
+Blazor-komponenterna anropar kommandoklasserna i processen, så HTTP-middleware
+ser inte skrivningarna. `WriteRateLimiter` är därför en singleton i
+kommandolagret med fast tidsfönster per konto-id och kommandotyp
+(`Report`, `Action`, `Confirmation`, `Flag`, `Photo`) och använder
+`TimeProvider` så att fönster kan provas utan att vänta. Den anropas efter
+behörighets- och valideringskontroll men före lagring; en bilduppladdning tar
+båda sina tillstånd eller inget. Läs-API:t får en separat policy i ASP.NET
+Core:s rate limiter per klientadress. Tillståndet ligger i minnet och delas inte
+mellan processer, vilket räcker för en instans på Pi.
+
 Den separat avstängda bildskivan tar emot högst en bild samtidigt med ett nytt
 inskick eller en ny åtgärd. Skanning och metadatafri omkodning sker innan
 texten sparas; filen placeras atomärt och bildmetadata och förälder sparas i
@@ -103,7 +114,8 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
 
 1. **Moderering:** driftsättning av granskningskö och anmälningar (kod finns,
    avstängd bakom `Reporting:FlagsEnabled`), överklaganden,
-   begränsningar, återställning och rate limits.
+   begränsningar och återställning. Skrivgränser finns bakom
+   `Reporting:RateLimits:Enabled`; avvägning av gränser för drift återstår.
 2. **Rapporter:** arkivering finns bakom `Reporting:ArchiveEnabled`; sammanslagning
    av dubbletter och säker
    driftsättning av den avstängda bildpipelinens kontroller och moderering.

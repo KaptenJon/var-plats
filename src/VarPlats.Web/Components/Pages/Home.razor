@@ -480,6 +480,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         {
             error = "Logga in med ett behörigt konto innan du rapporterar.";
         }
+        catch (WriteRateLimitException exception) { error = exception.Message; }
         catch (PhotoUploadException exception) { error = exception.Message; }
         catch (PhotoSanitizationException exception)
         {
