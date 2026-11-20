@@ -60,7 +60,10 @@
             <img class="report-photo" src="@($"/photos/reports/{report.Id}")" alt="Uppladdad bild till rapporten" />
         }
         <p>Latitud: @report.Latitude.ToString("0.######", CultureInfo.InvariantCulture) · Longitud: @report.Longitude.ToString("0.######", CultureInfo.InvariantCulture)</p>
-        <p><a href="@($"/?rapport={report.Id}")">Visa på kartan</a> · länken kan delas och visar bara rapportens plats.</p>
+        @if (archive is null)
+        {
+            <p><a href="@($"/?rapport={report.Id}")">Visa på kartan</a> · länken kan delas och visar bara rapportens plats.</p>
+        }
         @if (canFlag)
         {
             @FlagControls(null, "Anmäl rapporten")

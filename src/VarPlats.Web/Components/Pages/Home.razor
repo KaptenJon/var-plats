@@ -6,6 +6,7 @@
 @using VarPlats.Web.Photos
 @inject IReportStore Store
 @inject ReportCommands Commands
+@inject ReportArchiveCommands Archives
 @inject ReportingMode Mode
 @inject PhotoOptions PhotoSettings
 @inject PhotoUploadCommands PhotoUploads
@@ -248,9 +249,20 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     {
         if (Guid.TryParse(ReportQuery, out var reportId))
         {
-            try { linkedReport = await Store.GetAsync(reportId); }
+            var archived = false;
+            try
+            {
+                linkedReport = await Store.GetAsync(reportId);
+                // Archived reports keep their page but are not on the map, so an old link must not point at them.
+                if (linkedReport is not null && await Archives.GetAsync(reportId) is not null)
+                {
+                    linkedReport = null;
+                    archived = true;
+                }
+            }
             catch (Exception exception) when (exception is Npgsql.NpgsqlException or InvalidOperationException)
             {
+                linkedReport = null;
                 Logger.LogWarning(exception, "Den länkade rapporten kunde inte hämtas.");
             }
             if (linkedReport is not null)
@@ -260,7 +272,9 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                 status = $"Länkad rapport: {linkedReport.Title}.";
                 return;
             }
-            status = "Den länkade rapporten finns inte eller är inte publicerad. Kartan visar i stället startområdet.";
+            status = archived
+                ? "Den länkade rapporten är arkiverad och visas inte på kartan. Kartan visar i stället startområdet."
+                : "Den länkade rapporten finns inte eller är inte publicerad. Kartan visar i stället startområdet.";
         }
         sharedView = MapView.TryParse(LatitudeQuery, LongitudeQuery, ZoomQuery, out startView);
     }
