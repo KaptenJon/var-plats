@@ -44,7 +44,9 @@ public static class EmailAccountEndpoints
             return Results.LocalRedirect("/login?registered=1");
         }).AllowAnonymous().RequireRateLimiting("account-email");
 
-        app.MapPost("/auth/email/confirm", async (
+        // Egen adress: sidan /auth/email/confirm tar också emot POST (Blazor-formulär), så samma
+        // väg för API:t gav AmbiguousMatchException och 500 när användaren bekräftade.
+        app.MapPost("/auth/email/verify", async (
             HttpContext context, IAntiforgery antiforgery,
             UserManager<IdentityUser<Guid>> userManager, SignInManager<IdentityUser<Guid>> signInManager) =>
         {

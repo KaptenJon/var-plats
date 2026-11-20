@@ -12,7 +12,7 @@
     else if (!string.IsNullOrWhiteSpace(UserId) && !string.IsNullOrWhiteSpace(Token))
     {
         <p>Bekräfta adressen för att fortsätta skapa kontot och lägga till en passkey.</p>
-        <form action="/auth/email/confirm" method="post">
+        <form action="/auth/email/verify" method="post">
             <AntiforgeryToken />
             <input type="hidden" name="userId" value="@UserId" />
             <input type="hidden" name="token" value="@Token" />
