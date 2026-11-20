@@ -68,7 +68,11 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     <div class="workspace">
         <section class="map-panel" aria-label="Karta över rapporter">
             <div id="map" aria-label="Interaktiv karta. Rapporter finns också i listan." role="region"></div>
-            <div class="map-caption">Stockholm · startområde, inte din position</div>
+            <div class="map-caption">@(linkedReport is not null ? "Länkad rapport" : sharedView ? "Delad kartvy" : "Stockholm · startområde") · inte din position</div>
+            @if (mapReady)
+            {
+                <button type="button" class="text-button map-share" @onclick="ShareView">Dela kartvyn</button>
+            }
             @if (showForm)
             {
                 <div class="map-instruction">Klicka på kartan för att placera din rapport, eller ange koordinater i formuläret.</div>
@@ -205,7 +209,16 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     private bool showForm, saving, loading = true, refreshing, truncated;
     private MapArea? area;
     private int loadVersion;
-    private bool canReport, canModerate, canCheckOwn, canReview, removing, initialized;
+    private bool canReport, canModerate, canCheckOwn, canReview, removing, initialized, mapReady, sharedView;
+    private MapView startView = MapView.Default;
+    private Report? linkedReport;
+
+    // Shareable links: ?lat=&lon=&z= restores a view, ?rapport=<id> opens on a published report.
+    // Values are parsed by MapView/Guid; anything invalid falls back to the default view.
+    [SupplyParameterFromQuery(Name = "lat")] public string? LatitudeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "lon")] public string? LongitudeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "z")] public string? ZoomQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "rapport")] public string? ReportQuery { get; set; }
     private string? error, status;
     private string filter = "", search = "";
     private Guid? selected;
@@ -226,7 +239,50 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         if (!initialized)
         {
             initialized = true;
+            await ResolveLink();
             await LoadReports();
+        }
+    }
+
+    private async Task ResolveLink()
+    {
+        if (Guid.TryParse(ReportQuery, out var reportId))
+        {
+            try { linkedReport = await Store.GetAsync(reportId); }
+            catch (Exception exception) when (exception is Npgsql.NpgsqlException or InvalidOperationException)
+            {
+                Logger.LogWarning(exception, "Den länkade rapporten kunde inte hämtas.");
+            }
+            if (linkedReport is not null)
+            {
+                startView = MapView.ForReport(linkedReport);
+                selected = linkedReport.Id;
+                status = $"Länkad rapport: {linkedReport.Title}.";
+                return;
+            }
+            status = "Den länkade rapporten finns inte eller är inte publicerad. Kartan visar i stället startområdet.";
+        }
+        sharedView = MapView.TryParse(LatitudeQuery, LongitudeQuery, ZoomQuery, out startView);
+    }
+
+    private async Task ShareView()
+    {
+        if (module is null) return;
+        try
+        {
+            var result = await module.InvokeAsync<string>("shareView", "Vår plats – kartvy");
+            status = result switch
+            {
+                "shared" => "Kartvyn är delad.",
+                "copied" => "Länken till kartvyn är kopierad. Den visar bara den plats du har valt på kartan.",
+                "cancelled" => null,
+                _ => "Länken kunde inte delas automatiskt. Kopiera adressen i webbläsarens adressfält."
+            };
+        }
+        catch (JSException exception)
+        {
+            Logger.LogWarning(exception, "Kartvyn kunde inte delas.");
+            status = "Länken kunde inte delas automatiskt. Kopiera adressen i webbläsarens adressfält.";
         }
     }
 
@@ -237,7 +293,9 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         {
             module = await JS.InvokeAsync<IJSObjectReference>("import", "./map.js");
             callback = DotNetObjectReference.Create(this);
-            await module.InvokeVoidAsync("initialize", "map", MapSettings.Value, callback);
+            await module.InvokeVoidAsync("initialize", "map", MapSettings.Value, callback, startView,
+                linkedReport?.Id);
+            mapReady = true;
             var bounds = await module.InvokeAsync<double[]>("currentArea");
             if (bounds.Length == 4 && MapArea.TryCreate(bounds[0], bounds[1], bounds[2], bounds[3], out var visible, out _))
             {
@@ -245,6 +303,9 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                 await LoadReports(showLoading: false);
             }
             await SyncMap();
+            if (linkedReport is { } report)
+                await InvokeMap("focusReport", report.Id, report.Latitude, report.Longitude, MapView.ReportZoom);
+            StateHasChanged();
         }
         catch (JSException exception)
         {
@@ -369,7 +430,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
     private async Task Select(Report report)
     {
         selected = report.Id;
-        await InvokeMap("focusReport", report.Id, report.Latitude, report.Longitude);
+        await InvokeMap("focusReport", report.Id, report.Latitude, report.Longitude, null);
     }
     private async Task Save()
     {
