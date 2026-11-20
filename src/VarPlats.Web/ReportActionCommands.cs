@@ -37,6 +37,21 @@ public sealed class ReportActionCommands(
         return await Store().ConfirmAsync(reportId, actionId, accountId, cancellationToken);
     }
 
+    /// <summary>
+    /// Withdraws the signed-in account's own confirmation. The account id comes from the verified account, so
+    /// no account can withdraw another account's confirmation.
+    /// </summary>
+    public async Task<ConfirmationWithdrawalResult> WithdrawConfirmationAsync(
+        ClaimsPrincipal user, Guid reportId, Guid actionId, CancellationToken cancellationToken = default)
+    {
+        if (!mode.CanWithdrawConfirmation)
+            throw new InvalidOperationException("Återtagande av bekräftelser är inte aktiverat.");
+        var accountId = await RequireWriteAsync(user, cancellationToken);
+        // Withdrawals count against the same limit as confirmations.
+        rateLimiter?.Acquire(accountId, WriteKind.Confirmation);
+        return await Store().WithdrawConfirmationAsync(reportId, actionId, accountId, cancellationToken);
+    }
+
     public async Task<bool> RemoveAsync(
         ClaimsPrincipal user, Guid reportId, Guid actionId, CancellationToken cancellationToken = default)
     {

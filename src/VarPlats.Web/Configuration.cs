@@ -5,7 +5,7 @@ namespace VarPlats.Web;
 
 public sealed record ReportingMode(
     bool Demo, bool LocalWrites, bool PublicWrites, bool WorkflowEnabled = false, bool FlagsEnabled = false,
-    bool ArchiveEnabled = false)
+    bool ArchiveEnabled = false, bool ConfirmationWithdrawalEnabled = false)
 {
     public bool PublicWorkflow => PublicWrites && WorkflowEnabled && !Demo && !LocalWrites;
     public bool CanWrite => Demo || LocalWrites || PublicWorkflow;
@@ -17,6 +17,11 @@ public sealed record ReportingMode(
     public bool Archive => ArchiveEnabled && WorkflowEnabled && !Demo && !LocalWrites;
     /// <summary>Admins can archive and restore reports.</summary>
     public bool CanArchive => Archive && PublicWorkflow;
+    /// <summary>Reads show withdrawal history and re-confirmation is refused; requires the
+    /// ConfirmationWithdrawals migration.</summary>
+    public bool ConfirmationWithdrawal => ConfirmationWithdrawalEnabled && WorkflowEnabled && !Demo && !LocalWrites;
+    /// <summary>Accounts can withdraw their own confirmations.</summary>
+    public bool CanWithdrawConfirmation => ConfirmationWithdrawal && PublicWorkflow;
 }
 
 public sealed class MapOptions

@@ -30,6 +30,7 @@ var publicWrites = builder.Configuration.GetValue<bool>("Reporting:PublicWrites"
 var workflowEnabled = builder.Configuration.GetValue<bool>("Reporting:WorkflowEnabled");
 var flagsEnabled = builder.Configuration.GetValue<bool>("Reporting:FlagsEnabled");
 var archiveEnabled = builder.Configuration.GetValue<bool>("Reporting:ArchiveEnabled");
+var confirmationWithdrawalEnabled = builder.Configuration.GetValue<bool>("Reporting:ConfirmationWithdrawalEnabled");
 var authenticationEnabled = builder.Configuration.GetValue<bool>("Authentication:Enabled");
 if ((demo || localWrites) && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Demo och lokala skrivningar är endast tillåtna i Development.");
@@ -49,9 +50,12 @@ if (flagsEnabled && !workflowEnabled)
     throw new InvalidOperationException("Reporting:FlagsEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
 if (archiveEnabled && !workflowEnabled)
     throw new InvalidOperationException("Reporting:ArchiveEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
+if (confirmationWithdrawalEnabled && !workflowEnabled)
+    throw new InvalidOperationException(
+        "Reporting:ConfirmationWithdrawalEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
 
 var reportingMode = new ReportingMode(demo, localWrites, publicWrites, workflowEnabled, flagsEnabled,
-    archiveEnabled);
+    archiveEnabled, confirmationWithdrawalEnabled);
 var rateLimitOptions = builder.Configuration.GetSection("Reporting:RateLimits").Get<RateLimitOptions>()
     ?? new RateLimitOptions();
 rateLimitOptions.Validate();
