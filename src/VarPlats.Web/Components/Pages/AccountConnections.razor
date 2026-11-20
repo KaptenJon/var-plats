@@ -8,6 +8,7 @@
 @using Microsoft.AspNetCore.WebUtilities
 @inject UserManager<IdentityUser<Guid>> UserManager
 @inject IJSRuntime JS
+@inject IConfiguration Configuration
 @inject VarPlats.Web.ReportingMode Mode
 
 <PageTitle>Inloggningsmetoder – Vår plats</PageTitle>
@@ -22,36 +23,43 @@
     {
         <p>Återställningsläget kan endast lägga till en ny passkey. Andra inloggningsmetoder kan inte ändras förrän passkeyn är registrerad.</p>
     }
-    <h2>Passkeys och fysiska nycklar</h2>
-    <AntiforgeryToken />
-    <button type="button" disabled="@busy" @onclick="AddPasskey">Lägg till passkey eller FIDO2-nyckel</button>
-    @if (passkeys.Count > 0)
+    @if (devAccounts)
     {
-        <ul>
-            @foreach (var key in passkeys)
-            {
-                <li><span>Registrerad säkerhetsnyckel</span>
-                    @if (!recoveryOnly)
-                    {
-                        <button type="button" class="text-button" disabled="@busy" @onclick="() => RemovePasskey(key)">Ta bort</button>
-                    }
-                </li>
-            }
-        </ul>
+        <p role="status">Lokal testmiljö: passkeys och Google/GitHub är avstängda för testkonton.</p>
     }
-    <h2>Google och GitHub</h2>
-    @foreach (var provider in new[] { "google", "github" })
+    else
     {
-        @if (linkedProviders.Contains(provider, StringComparer.OrdinalIgnoreCase))
+        <h2>Passkeys och fysiska nycklar</h2>
+        <AntiforgeryToken />
+        <button type="button" disabled="@busy" @onclick="AddPasskey">Lägg till passkey eller FIDO2-nyckel</button>
+        @if (passkeys.Count > 0)
         {
-            <p>@(provider == "google" ? "Google" : "GitHub") är länkat.</p>
+            <ul>
+                @foreach (var key in passkeys)
+                {
+                    <li><span>Registrerad säkerhetsnyckel</span>
+                        @if (!recoveryOnly)
+                        {
+                            <button type="button" class="text-button" disabled="@busy" @onclick="() => RemovePasskey(key)">Ta bort</button>
+                        }
+                    </li>
+                }
+            </ul>
         }
-        else if (!recoveryOnly)
+        <h2>Google och GitHub</h2>
+        @foreach (var provider in new[] { "google", "github" })
         {
-            <form action="@($"/auth/link/{provider}")" method="post">
-                <AntiforgeryToken />
-                <button type="submit">Länka @(provider == "google" ? "Google" : "GitHub")</button>
-            </form>
+            @if (linkedProviders.Contains(provider, StringComparer.OrdinalIgnoreCase))
+            {
+                <p>@(provider == "google" ? "Google" : "GitHub") är länkat.</p>
+            }
+            else if (!recoveryOnly)
+            {
+                <form action="@($"/auth/link/{provider}")" method="post">
+                    <AntiforgeryToken />
+                    <button type="submit">Länka @(provider == "google" ? "Google" : "GitHub")</button>
+                </form>
+            }
         }
     }
     @if (!recoveryOnly)
@@ -80,6 +88,7 @@
     private bool busy;
     private string? message;
     private bool recoveryOnly;
+    private bool devAccounts => Configuration.GetValue<bool>(DevAccounts.ConfigurationKey);
 
     [SupplyParameterFromQuery(Name = "linked")]
     private string? Linked { get; set; }
@@ -123,7 +132,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender && !devAccounts)
         {
             try { module = await JS.InvokeAsync<IJSObjectReference>("import", "./passkeys.js"); }
             catch (JSException) { message = "Passkey-funktionen kunde inte laddas."; }

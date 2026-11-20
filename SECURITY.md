@@ -188,6 +188,11 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   tabellägaren. `action_hearts` får SELECT/INSERT/DELETE eftersom ett hjärta
   kan tas bort.
 - Lokal skrivning kräver Development och loopback. Aldrig en publik dev-proxy.
+- Lokala testkonton (`Authentication:DevAccounts`) kräver Development och en databas på
+  `localhost`; annars stoppar appen. Migrering och konton skapas bara i en databas märkt
+  `varplats-lokal-utveckling`. Förfrågningar med annan adress än loopback eller med
+  proxyhuvuden nekas. Läget ersätter all riktig inloggning och får aldrig användas i en
+  miljö som andra kan nå.
 - Gemensam servervalidering, EF-parametrisering, textkodade Leaflet-popupfält
   och Blazors normala HTML-kodning. Inget användarinnehåll går till `MarkupString`.
 - Antiforgery, host-begränsning, HSTS i produktion, icke-root webbcontainer.

@@ -17,6 +17,23 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "Reporting__LocalWrites": "true"
       }
+    },
+    "konton": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5180",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Authentication__Enabled": "true",
+        "Authentication__DevAccounts": "true",
+        "Reporting__WorkflowEnabled": "true",
+        "Reporting__PublicWrites": "true",
+        "Reporting__FlagsEnabled": "true",
+        "Reporting__ArchiveEnabled": "true",
+        "Reporting__ConfirmationWithdrawalEnabled": "true",
+        "Reporting__PointsEnabled": "true",
+        "Reporting__RateLimits__Enabled": "true"
+      }
     }
   }
 }

@@ -5,7 +5,7 @@
 <PageTitle>Återställ inloggning – Vår plats</PageTitle>
 <main class="document">
     <h1>Återställ inloggning</h1>
-    @if (!Configuration.GetValue<bool>("Authentication:Enabled"))
+    @if (!Configuration.GetValue<bool>("Authentication:Enabled") || Configuration.GetValue<bool>(DevAccounts.ConfigurationKey))
     {
         <p role="status">Återställning är inte aktiverad i den här miljön.</p>
     }

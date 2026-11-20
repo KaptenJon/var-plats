@@ -33,8 +33,14 @@ var archiveEnabled = builder.Configuration.GetValue<bool>("Reporting:ArchiveEnab
 var confirmationWithdrawalEnabled = builder.Configuration.GetValue<bool>("Reporting:ConfirmationWithdrawalEnabled");
 var pointsEnabled = builder.Configuration.GetValue<bool>("Reporting:PointsEnabled");
 var authenticationEnabled = builder.Configuration.GetValue<bool>("Authentication:Enabled");
+var devAccounts = builder.Configuration.GetValue<bool>(DevAccounts.ConfigurationKey);
 if ((demo || localWrites) && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Demo och lokala skrivningar är endast tillåtna i Development.");
+if (devAccounts && !builder.Environment.IsDevelopment())
+    throw new InvalidOperationException("Authentication:DevAccounts är endast tillåtet i Development.");
+if (devAccounts && (!authenticationEnabled || demo || localWrites))
+    throw new InvalidOperationException(
+        "Authentication:DevAccounts kräver Authentication:Enabled och kan inte kombineras med demo eller lokala skrivningar.");
 if (publicWrites && (demo || localWrites))
     throw new InvalidOperationException("Publika skrivningar kan inte kombineras med demo eller lokala skrivningar.");
 if (publicWrites && !authenticationEnabled)
@@ -77,7 +83,9 @@ var publicBaseUrl = builder.Configuration["Authentication:PublicBaseUrl"];
 IPAddress? trustedProxyIp = null;
 if (!string.IsNullOrWhiteSpace(trustedProxyValue) && !IPAddress.TryParse(trustedProxyValue, out trustedProxyIp))
     throw new InvalidOperationException("Authentication:TrustedProxyIp must be a single IP address.");
-if (authenticationEnabled)
+// Lokala testkonton ersätter OAuth, e-post och passkeys; inga externa hemligheter behövs eller används.
+var externalSignIn = authenticationEnabled && !devAccounts;
+if (externalSignIn)
 {
     var requiredSettings = new[]
     {
@@ -205,6 +213,12 @@ if (authenticationEnabled)
     builder.Services.AddScoped<IReportAccountAccess, IdentityReportAccountAccess>();
     builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
         options.TokenLifespan = TimeSpan.FromHours(1));
+    builder.Services.AddScoped<IdentityAccountActivityStore>();
+    if (!builder.Environment.IsDevelopment())
+        builder.Services.AddHostedService<IdentityAccountRetentionService>();
+}
+if (externalSignIn)
+{
     builder.Services.Configure<IdentityPasskeyOptions>(options =>
     {
         options.ServerDomain = passkeyServerDomain!;
@@ -222,11 +236,8 @@ if (authenticationEnabled)
             "Mailjet credentials and a sender email are required.")
         .ValidateOnStart();
     builder.Services.AddHttpClient<MailjetEmailSender>(client => client.Timeout = TimeSpan.FromSeconds(10));
-    builder.Services.AddScoped<IdentityAccountActivityStore>();
-    if (!builder.Environment.IsDevelopment())
-        builder.Services.AddHostedService<IdentityAccountRetentionService>();
 }
-else
+if (!authenticationEnabled)
 {
     builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
         .AddCookie(options =>
@@ -279,7 +290,7 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 builder.Services.AddCascadingAuthenticationState();
-if (authenticationEnabled)
+if (externalSignIn)
 {
     builder.Services.AddAuthentication()
         .AddGoogle(options =>
@@ -385,6 +396,8 @@ else
 {
     var connection = builder.Configuration.GetConnectionString("varplats")
         ?? throw new InvalidOperationException("ConnectionStrings:varplats krävs. Se README för lokal demo.");
+    if (devAccounts)
+        DevAccounts.ValidateDatabase(connection);
     builder.Services.AddDbContextFactory<ReportDbContext>(options =>
         options.UseNpgsql(connection, postgres => postgres.UseNetTopologySuite()));
     builder.Services.AddScoped<IReportStore, DatabaseReportStore>();
@@ -402,13 +415,27 @@ builder.Services.AddExceptionHandler<PublicExceptionHandler>();
 var app = builder.Build();
 if (photoOptions.Enabled)
     _ = app.Services.GetRequiredService<IPhotoFileStorage>();
+if (devAccounts)
+{
+    // Runs before UseForwardedHeaders, which would otherwise consume the proxy headers. Test accounts
+    // replace all real sign-in, so only direct requests from this machine may reach them.
+    app.Use(async (context, next) =>
+    {
+        if (!DevAccounts.IsDirectLocalRequest(context))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+        await next();
+    });
+}
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
 if (!app.Environment.IsDevelopment())
     app.UseHsts();
 app.Use(async (context, next) =>
 {
-    // Local write mode must not become an unauthenticated public preview.
+    // Local write mode must not become a public preview.
     if ((demo || localWrites) && (context.Connection.RemoteIpAddress is not { } address || !IPAddress.IsLoopback(address)))
     {
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -455,7 +482,9 @@ if (rateLimitOptions.Enabled)
     reportsApi.RequireRateLimiting("reports-api");
 if (photoOptions.Enabled)
     app.MapPhotoEndpoints();
-if (authenticationEnabled)
+if (devAccounts)
+    app.MapDevAccountEndpoints();
+if (externalSignIn)
 {
     app.MapPost("/auth/signin/google", async (
         HttpContext context, IAntiforgery antiforgery, SignInManager<IdentityUser<Guid>> signInManager) =>
@@ -572,6 +601,11 @@ if (authenticationEnabled)
         await signInManager.SignInAsync(user, isPersistent: false);
         return Results.LocalRedirect("/");
     }).AllowAnonymous();
+    app.MapEmailAccountEndpoints(publicBaseUrl!);
+    app.MapPasskeyEndpoints();
+}
+if (authenticationEnabled)
+{
     app.MapPost("/auth/logout", async (HttpContext context, IAntiforgery antiforgery) =>
     {
         await antiforgery.ValidateRequestAsync(context);
@@ -579,11 +613,11 @@ if (authenticationEnabled)
         await context.SignOutAsync(IdentityConstants.ExternalScheme);
         return Results.LocalRedirect("/");
     }).RequireAuthorization();
-    app.MapEmailAccountEndpoints(publicBaseUrl!);
-    app.MapPasskeyEndpoints();
     app.MapAccountDeletionEndpoint();
 }
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+if (devAccounts)
+    await DevAccounts.PrepareAsync(app.Services, builder.Configuration.GetConnectionString("varplats")!);
 app.Run();
 
 static bool IsAllowedPasskeyOrigin(string origin, string serverDomain)

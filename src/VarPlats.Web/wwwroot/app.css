@@ -118,3 +118,7 @@ footer { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wr
 .nearby-list .text-button { justify-self: start; min-height: 44px; }
 .archive-notice { margin: 12px 0; padding: 12px 14px; border-left: 4px solid var(--muted); background: var(--field); }
 .archive-notice p { margin: 4px 0; }
+.dev-accounts { list-style: none; padding: 0; }
+.dev-accounts li { margin: 0 0 18px; }
+.dev-accounts button { min-height: 44px; padding: 8px 14px; }
+.dev-accounts p { margin: 6px 0 0; }

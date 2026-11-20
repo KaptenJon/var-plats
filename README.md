@@ -38,6 +38,47 @@ inloggning skrivs i terminalen; exponera den inte offentligt.
 Init-SQL körs bara för en **ny** datavolym. Befintliga volymer uppgraderas inte
 automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 
+## Alla funktioner lokalt med testkonton
+
+För att prova granskning, åtgärder, bekräftelser, återtagande, poäng, hjärtan,
+gåvor, anmälningar, arkivering och skrivgränser med olika roller finns
+startprofilen `konton`. Den slår på alla brytare utom bilder och ersätter OAuth,
+e-post och passkeys med **syntetiska testkonton** (`Authentication:DevAccounts`).
+Kräver Docker men inget HTTPS-certifikat:
+
+```powershell
+./tools/local-accounts.ps1
+```
+
+Skriptet bygger PostGIS-imagen, startar containern `varplats-local-db` på
+`127.0.0.1:55432` och kör webben på <http://localhost:5180>. Vid start körs
+EF-migreringarna mot den lokala databasen och testkontona skapas. `-Reset`
+börjar om med tom databas, `-DatabaseOnly` startar bara databasen. Lösenordet
+till databasen slumpas när containern skapas och sparas inte i repot.
+
+Webben migrerar och skapar konton **bara** i en databas som uttryckligen är märkt
+som lokal engångsdatabas (`COMMENT ON DATABASE … IS 'varplats-lokal-utveckling'`);
+skriptet sätter märkningen. Ett `localhost`-namn räcker inte, eftersom en SSH-tunnel
+eller en kopia av produktionen också kan nås via `localhost`. Med Aspire
+(`dotnet run --project src/VarPlats.AppHost -- --VarPlats:WebLaunchProfile=konton`)
+märker du utvecklingsdatabasen en gång för hand innan profilen används.
+
+Logga in via **Logga in** och välj konto:
+
+| Konto | Roll | Används till |
+|---|---|---|
+| Administratör (`admin@varplats.test`) | Admin | Granskningskö, anmälningar, arkiv |
+| Medlem A, B, C (`medlem-a@varplats.test` …) | Member | Rapporter, åtgärder, bekräftelser, poäng |
+| Konto utan roll (`utan-roll@varplats.test`) | – | Inloggad men får bara läsa |
+| Spärrat konto (`sparrad@varplats.test`) | Member, spärrad | Inloggningen nekas |
+
+Testkonton är bara tillåtna i Development och mot en databas på `localhost`;
+annars stoppar appen. Förfrågningar som inte kommer direkt från den egna datorn
+(annan adress eller proxyhuvuden som `X-Forwarded-For`) nekas, så läget fungerar
+inte bakom en omvänd proxy. Bilder kräver Linux, `procfs` och
+clamd och kan inte provas med detta skript på Windows. Poäng finns först när ett
+annat konto bekräftar en åtgärd, så gåvor provas enklast med två medlemmar.
+
 ## Vad ingår?
 
 | Fungerar nu (publik rapportering är avstängd) | Inte implementerat ännu |

@@ -5,7 +5,7 @@
 <PageTitle>Skapa konto – Vår plats</PageTitle>
 <main class="document">
     <h1>Skapa konto</h1>
-    @if (!Configuration.GetValue<bool>("Authentication:Enabled"))
+    @if (!Configuration.GetValue<bool>("Authentication:Enabled") || Configuration.GetValue<bool>(DevAccounts.ConfigurationKey))
     {
         <p role="status">Kontoregistrering är inte aktiverad i den här miljön.</p>
     }
