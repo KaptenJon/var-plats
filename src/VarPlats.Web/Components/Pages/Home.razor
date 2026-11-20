@@ -7,6 +7,7 @@
 @inject IReportStore Store
 @inject ReportCommands Commands
 @inject ReportArchiveCommands Archives
+@inject ContentFlagCommands Flags
 @inject ReportingMode Mode
 @inject PhotoOptions PhotoSettings
 @inject PhotoUploadCommands PhotoUploads
@@ -48,6 +49,10 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         else if (Mode.LocalWrites)
         {
             <strong>Lokal utveckling</strong><span>Rapporter sparas i din utvecklingsdatabas. Använd inga personuppgifter.</span>
+        }
+        else if (Mode.DirectPublish)
+        {
+            <strong>Rapportering utan förhandsgranskning</strong><span>Rapporter och åtgärdsuppgifter från inloggade konton visas direkt och har inte granskats i förväg. @(Mode.HideOnFlag ? "Anmält innehåll döljs i väntan på granskning." : "Anmäl innehåll som bryter mot reglerna.")</span>
         }
         else if (Mode.PublicWorkflow)
         {
@@ -96,7 +101,11 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
             {
                 <div class="panel-heading"><h2>Vad har du sett?</h2><button class="text-button" @onclick="CloseForm">Avbryt</button></div>
                 <p class="small">Beskriv platsen, inte personer. Lägg inte till namn, registreringsnummer eller kontaktuppgifter.</p>
-                @if (Mode.PublicWorkflow)
+                @if (Mode.DirectPublish)
+                {
+                    <p>Rapporten publiceras direkt, utan förhandsgranskning, och syns för alla. @(PhotoSettings.Enabled ? "En vald bild visas tillsammans med rapporten. " : "")En administratör kan ta bort den i efterhand.</p>
+                }
+                else if (Mode.PublicWorkflow)
                 {
                     <p>Rapporten väntar på manuell granskning och publiceras först om den godkänns.</p>
                 }
@@ -140,7 +149,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                         <PhotoUploadField Id="report-photo" Disabled="saving" SelectionChanged="SetPhoto" />
                     }
                     <p class="safety">Rör inte elinstallationer, trafikmiljö, kemikalier, sprutor eller okänt avfall. Vid akut fara: ring 112.</p>
-                    <RadzenButton ButtonType="ButtonType.Submit" Text="@(saving ? "Sparar…" : Mode.Demo ? "Spara i lokal demo" : Mode.PublicWorkflow ? "Skicka till granskning" : "Spara i utvecklingsdatabas")" Disabled="saving" Style="width: 100%" />
+                    <RadzenButton ButtonType="ButtonType.Submit" Text="@(saving ? "Sparar…" : Mode.Demo ? "Spara i lokal demo" : Mode.DirectPublish ? "Publicera rapporten" : Mode.PublicWorkflow ? "Skicka till granskning" : "Spara i utvecklingsdatabas")" Disabled="saving" Style="width: 100%" />
                 </EditForm>
             }
             else
@@ -251,6 +260,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
         if (Guid.TryParse(ReportQuery, out var reportId))
         {
             var archived = false;
+            var hidden = false;
             try
             {
                 linkedReport = await Store.GetAsync(reportId);
@@ -259,6 +269,12 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                 {
                     linkedReport = null;
                     archived = true;
+                }
+                // Flag-hidden reports are off the map for everyone, so a shared link only gets a neutral note.
+                if (linkedReport is not null && (await Flags.GetVisibilityAsync(new(), reportId)).ReportHidden)
+                {
+                    linkedReport = null;
+                    hidden = true;
                 }
             }
             catch (Exception exception) when (exception is Npgsql.NpgsqlException or InvalidOperationException)
@@ -273,7 +289,9 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
                 status = $"Länkad rapport: {linkedReport.Title}.";
                 return;
             }
-            status = archived
+            status = hidden
+                ? "Den länkade rapporten är dold i väntan på granskning och visas inte på kartan. Kartan visar i stället startområdet."
+                : archived
                 ? "Den länkade rapporten är arkiverad och visas inte på kartan. Kartan visar i stället startområdet."
                 : "Den länkade rapporten finns inte eller är inte publicerad. Kartan visar i stället startområdet.";
         }
@@ -474,6 +492,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
             await LoadReports();
             await SyncMap();
             status = Mode.Demo ? "Rapporten är sparad i din lokala demo, inte publicerad."
+                : Mode.DirectPublish ? "Rapporten är publicerad och visas på kartan."
                 : Mode.PublicWorkflow ? "Rapporten är skickad och väntar på granskning. Den visas offentligt först om den godkänns."
                 : "Rapporten är sparad i din utvecklingsdatabas.";
         }

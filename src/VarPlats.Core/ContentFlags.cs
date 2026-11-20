@@ -38,11 +38,22 @@ public sealed class ContentFlagDraft : IValidatableObject
 
 /// <summary>
 /// Open flags for one item, grouped for the admin queue. <see cref="ActionId"/> is null when the report itself
-/// is flagged. Flagging accounts are never exposed, only counts, reasons and notes.
+/// is flagged. Flagging accounts are never exposed, only counts, reasons and notes. <see cref="Hidden"/> is only
+/// set when hide-on-flag is switched on and enough flags come from accounts other than the author.
 /// </summary>
 public sealed record FlaggedContent(
     Guid ReportId, Guid? ActionId, string ReportTitle, string Text, int FlagCount,
-    IReadOnlyList<FlagReason> Reasons, IReadOnlyList<string> Notes, DateTimeOffset FirstFlaggedAt);
+    IReadOnlyList<FlagReason> Reasons, IReadOnlyList<string> Notes, DateTimeOffset FirstFlaggedAt,
+    bool Hidden = false);
+
+/// <summary>
+/// What hide-on-flag currently hides on one report page. <see cref="ViewerIsReportAuthor"/> tells whether the
+/// viewing account submitted the report; the author id itself is never returned.
+/// </summary>
+public sealed record HiddenContent(bool ReportHidden, bool ViewerIsReportAuthor, IReadOnlySet<Guid> HiddenActionIds)
+{
+    public static HiddenContent None { get; } = new(false, false, new HashSet<Guid>());
+}
 
 public interface IContentFlagStore
 {
@@ -50,4 +61,7 @@ public interface IContentFlagStore
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<FlaggedContent>> ListOpenAsync(CancellationToken cancellationToken = default);
     Task<int> DismissAsync(Guid reportId, Guid? actionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Hidden state of a report and its action texts. Only available when hide-on-flag is switched on.</summary>
+    Task<HiddenContent> GetHiddenAsync(Guid reportId, Guid? viewerId, CancellationToken cancellationToken = default);
 }

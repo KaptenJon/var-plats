@@ -76,7 +76,13 @@ public sealed class DatabaseContentFlagStore(
                     report.Title,
                     ReportText = report.Description,
                     ActionText = db.ReportActions.Where(action => action.Id == flag.ActionId)
-                        .Select(action => action.Description).FirstOrDefault()
+                        .Select(action => action.Description).FirstOrDefault(),
+                    // Flags from the author never hide their own content (see FlagVisibility).
+                    ByAuthor = flag.ActionId == null
+                        ? db.ReportSubmissions.Any(submission => submission.PublishedReportId == flag.ReportId
+                            && submission.AuthorId == flag.ReporterId)
+                        : db.ReportActions.Any(action => action.Id == flag.ActionId
+                            && action.AuthorId == flag.ReporterId)
                 })
             .Take(QueueRowLimit)
             .ToArrayAsync(cancellationToken);
@@ -92,11 +98,27 @@ public sealed class DatabaseContentFlagStore(
                     group.Count(),
                     group.Select(row => row.Reason).Distinct().Order().ToArray(),
                     group.Where(row => row.Note is not null).Select(row => row.Note!).ToArray(),
-                    first.CreatedAt);
+                    first.CreatedAt,
+                    mode.HideOnFlag && group.Count(row => !row.ByAuthor) >= mode.HideOnFlagMinimumFlags);
             })
             .OrderBy(item => item.FirstFlaggedAt)
             .Take(ContentFlagLimits.QueueSize)
             .ToArray();
+    }
+
+    public async Task<HiddenContent> GetHiddenAsync(
+        Guid reportId, Guid? viewerId, CancellationToken cancellationToken = default)
+    {
+        if (!mode.HideOnFlag)
+            throw new InvalidOperationException("Dölj vid anmälan är inte aktiverat.");
+        var minimum = mode.HideOnFlagMinimumFlags;
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var reportHidden = await FlagVisibility.IsReportHiddenAsync(db, reportId, minimum, cancellationToken);
+        var viewerIsAuthor = viewerId is { } viewer && viewer != Guid.Empty
+            && await db.ReportSubmissions.AnyAsync(submission => submission.PublishedReportId == reportId
+                && submission.AuthorId == viewer, cancellationToken);
+        var hiddenActions = await FlagVisibility.HiddenActionIdsForReportAsync(db, reportId, minimum, cancellationToken);
+        return new(reportHidden, viewerIsAuthor, hiddenActions.ToHashSet());
     }
 
     public async Task<int> DismissAsync(Guid reportId, Guid? actionId, CancellationToken cancellationToken = default)

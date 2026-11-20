@@ -16,7 +16,7 @@ public sealed class DatabaseReportWorkflowStore(
             throw new ArgumentException("Ett konto krävs.", nameof(authorId));
         var report = draft.ToReport();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        db.ReportSubmissions.Add(new()
+        var submission = new ReportSubmissionEntity
         {
             Id = report.Id,
             Title = report.Title,
@@ -26,8 +26,20 @@ public sealed class DatabaseReportWorkflowStore(
             CreatedAt = report.CreatedAt,
             ReviewStatus = ReportReviewStatus.Pending,
             AuthorId = authorId
-        });
+        };
+        db.ReportSubmissions.Add(submission);
+        if (!mode.DirectPublish)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return report;
+        }
+
+        // Direct publishing: the submission is saved and approved in one transaction, exactly as an approval,
+        // so the review history and the author link stay in report_submissions.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+        await ReportPublication.PublishAsync(db, submission, photoOptions, photoStorage, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return report;
     }
 
@@ -79,46 +91,12 @@ public sealed class DatabaseReportWorkflowStore(
         }
 
         if (decision == ReportReviewStatus.Approved)
+            await ReportPublication.PublishAsync(db, submission, photoOptions, photoStorage, cancellationToken);
+        else
         {
-            await db.Database.ExecuteSqlRawAsync(
-                "SET LOCAL varplats.photo_review_verified = ''", cancellationToken);
-            if (photoOptions?.Enabled == true)
-            {
-                var photo = await db.ReportPhotos.AsNoTracking()
-                    .SingleOrDefaultAsync(candidate => candidate.SubmissionId == submission.Id, cancellationToken);
-                if (photo is not null)
-                {
-                    if (photoStorage is null)
-                        throw new PhotoReviewException();
-                    try
-                    {
-                        await PhotoIntegrity.ReadAsync(photoStorage, photo.StorageName, photo.ContentType,
-                            photo.Sha256, photo.ByteLength, cancellationToken);
-                    }
-                    catch (Exception exception) when (exception is IOException or FormatException or UnauthorizedAccessException)
-                    {
-                        throw new PhotoReviewException(exception);
-                    }
-                    await db.Database.ExecuteSqlAsync(
-                        $"SELECT set_config('varplats.photo_review_verified', {submission.Id.ToString()}, true)",
-                        cancellationToken);
-                }
-            }
-            db.Reports.Add(new()
-            {
-                Id = submission.Id,
-                Title = submission.Title,
-                Description = submission.Description,
-                Category = submission.Category,
-                Location = new(submission.Location.X, submission.Location.Y) { SRID = 4326 },
-                CreatedAt = submission.CreatedAt,
-                Status = ReportStatus.Reported
-            });
-            submission.PublishedReportId = submission.Id;
+            submission.ReviewStatus = decision;
+            await db.SaveChangesAsync(cancellationToken);
         }
-
-        submission.ReviewStatus = decision;
-        await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
     }

@@ -28,7 +28,14 @@
     }
     else
     {
-        <p>Rapporter visas offentligt först efter godkännande. Granska innehåll och plats, även om rapportören har ombetts att inte ange personuppgifter.</p>
+        @if (Mode.DirectPublish)
+        {
+            <p>Nya rapporter publiceras direkt utan förhandsgranskning. Kön nedan visar bara rapporter som skickades in innan direktpublicering slogs på. @(Mode.HideOnFlag ? "Anmält innehåll döljs direkt och hanteras under Anmält innehåll." : "Anmält innehåll hanteras under Anmält innehåll.")</p>
+        }
+        else
+        {
+            <p>Rapporter visas offentligt först efter godkännande. Granska innehåll och plats, även om rapportören har ombetts att inte ange personuppgifter.</p>
+        }
         @if (!Mode.PublicWorkflow)
         {
             <p>Granskningskön är tillgänglig för läsning, men ändringar är avstängda.</p>
@@ -83,6 +90,10 @@
             <section aria-labelledby="flags-heading">
                 <h2 id="flags-heading">Anmält innehåll</h2>
                 <p>Publicerade rapporter och åtgärdstexter som konton har anmält. Vem som anmält visas inte. Ta bort innehållet om det bryter mot reglerna, annars avfärdar du anmälningarna.</p>
+                @if (Mode.HideOnFlag)
+                {
+                    <p>Innehåll med minst @FlagCountText(Mode.HideOnFlagMinimumFlags) från andra konton än upphovskontot är dolt för alla utom administratörer och upphovskontot tills du har hanterat det. Återställ visar det igen; samma konton kan inte anmäla det på nytt. @(Mode.HideOnFlagMinimumFlags == 1 ? "Ett enda konto kan alltså dölja innehåll, så granska anmälan och inte bara antalet." : "Granska anmälan och inte bara antalet.")</p>
+                }
                 @if (!Mode.CanFlag)
                 {
                     <p>Anmälningar kan läsas, men ändringar är avstängda.</p>
@@ -109,6 +120,10 @@
                                 <article style="overflow-wrap: anywhere">
                                     <h3>@(item.ActionId is null ? "Rapport" : "Åtgärdstext") · @item.ReportTitle</h3>
                                     <p>@FlagCountText(item.FlagCount) · första @item.FirstFlaggedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC</p>
+                                    @if (item.Hidden)
+                                    {
+                                        <p><strong>@ContentFlagText.HiddenNote</strong> · visas inte för andra konton just nu.</p>
+                                    }
                                     <p class="action-description">@item.Text</p>
                                     <p><strong>Anledningar:</strong> @string.Join("; ", item.Reasons.Select(ContentFlagText.Reason))</p>
                                     @if (item.Notes.Count > 0)
@@ -125,7 +140,7 @@
                                     @if (Mode.CanFlag)
                                     {
                                         <button type="button" class="text-button" disabled="@busy" @onclick="() => RemoveFlagged(item)">@(item.ActionId is null ? "Ta bort rapporten" : "Ta bort åtgärdstexten")</button>
-                                        <button type="button" class="text-button" disabled="@busy" @onclick="() => Dismiss(item)">Avfärda anmälningarna</button>
+                                        <button type="button" class="text-button" disabled="@busy" @onclick="() => Dismiss(item)">@(item.Hidden ? "Återställ och visa igen" : "Avfärda anmälningarna")</button>
                                     }
                                 </article>
                             </li>
@@ -259,11 +274,15 @@
         status = null;
         try
         {
-            if (!await JS.InvokeAsync<bool>("confirm", "Avfärda anmälningarna? Innehållet ligger kvar och samma konton kan inte anmäla det igen."))
+            var question = item.Hidden
+                ? "Avfärda anmälningarna och visa innehållet igen? Samma konton kan inte anmäla det på nytt."
+                : "Avfärda anmälningarna? Innehållet ligger kvar och samma konton kan inte anmäla det igen.";
+            if (!await JS.InvokeAsync<bool>("confirm", question))
                 return;
             var count = await Flags.DismissAsync((await AuthenticationStateTask).User, item.ReportId, item.ActionId);
             await ReloadFlags();
-            status = count == 0 ? "Anmälningarna var redan hanterade. Listan har uppdaterats." : "Anmälningarna har avfärdats.";
+            status = count == 0 ? "Anmälningarna var redan hanterade. Listan har uppdaterats."
+                : item.Hidden ? "Anmälningarna har avfärdats och innehållet visas igen." : "Anmälningarna har avfärdats.";
         }
         catch (UnauthorizedAccessException) { error = "Endast administratörer kan hantera anmälningar."; }
         catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException or JSException)

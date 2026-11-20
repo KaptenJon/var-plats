@@ -32,6 +32,14 @@
         <h1>Rapport</h1>
         <p role="status">Hämtar rapporten…</p>
     }
+    else if (report is not null && visibility.ReportWithheld)
+    {
+        <h1>Rapport</h1>
+        <div class="archive-notice" role="note">
+            <p><strong>@ContentFlagText.HiddenNote</strong></p>
+            <p class="small">@ContentFlagText.HiddenExplanation</p>
+        </div>
+    }
     else if (report is null)
     {
         <h1>Rapporten finns inte</h1>
@@ -45,6 +53,13 @@
         <h1>@report.Title</h1>
         <p>@CategoryName(report.Category) · @FormatTime(report.CreatedAt) UTC</p>
         <p><strong>Status:</strong> @ReportStatusText.Describe(report.Status, Mode.WorkflowEnabled)</p>
+        @if (visibility.ReportHidden)
+        {
+            <div class="archive-notice" role="note">
+                <p><strong>@ContentFlagText.HiddenNote</strong></p>
+                <p class="small">Rapporten har anmälts och visas inte på kartan, i listan eller för andra konton förrän en moderator har granskat den. @(visibility.IsModerator ? "Återställ eller ta bort den i granskningskön." : "Du ser den eftersom den är din.")</p>
+            </div>
+        }
         @if (archive is not null)
         {
             <div class="archive-notice" role="note">
@@ -62,7 +77,7 @@
             <img class="report-photo" src="@($"/photos/reports/{report.Id}")" alt="Uppladdad bild till rapporten" />
         }
         <p>Latitud: @report.Latitude.ToString("0.######", CultureInfo.InvariantCulture) · Longitud: @report.Longitude.ToString("0.######", CultureInfo.InvariantCulture)</p>
-        @if (archive is null)
+        @if (archive is null && !visibility.ReportHidden)
         {
             <p><a href="@($"/?rapport={report.Id}")">Visa på kartan</a> · länken kan delas och visar bara rapportens plats.</p>
         }
@@ -152,7 +167,20 @@
                     {
                         <li>
                             <article>
+                                @if (visibility.ActionWithheld(action))
+                                {
+                                    <p><strong>@ContentFlagText.HiddenNote</strong> · @FormatTime(action.CreatedAt) UTC</p>
+                                    <p class="small">@ContentFlagText.HiddenExplanation</p>
+                                }
+                                else
+                                {
+                                // Hidden content keeps its confirmations, hearts and points but takes no new ones.
+                                var frozen = visibility.ReportHidden || visibility.IsHidden(action);
                                 <p><strong>@ConfirmationText(action.ConfirmationCount)</strong> · @FormatTime(action.CreatedAt) UTC</p>
+                                @if (visibility.IsHidden(action))
+                                {
+                                    <p class="small"><strong>@ContentFlagText.HiddenNote</strong> · åtgärdstexten visas inte för andra konton förrän en moderator har granskat den.</p>
+                                }
                                 @if (action.WithdrawnCount > 0)
                                 {
                                     <p class="small">@WithdrawnText(action.WithdrawnCount)</p>
@@ -191,18 +219,18 @@
                                 {
                                     <p class="small">Ditt konto har tagit tillbaka sin bekräftelse och kan inte bekräfta uppgiften igen.</p>
                                 }
-                                else if (canWrite)
+                                else if (canWrite && !frozen)
                                 {
                                     <button type="button" class="text-button" disabled="@busy" @onclick="() => Confirm(action.Id)">Bekräfta uppgiften</button>
                                 }
                                 @if (Mode.Points && appreciation.TryGetValue(action.Id, out var liked))
                                 {
                                     <p class="small"><span aria-hidden="true">♥</span> @PointsText.Hearts(liked.Hearts) · @PointsText.Points(liked.Points) till åtgärden</p>
-                                    @if (canUsePoints && !action.IsOwnAction && (archive is null || liked.ViewerHearted))
+                                    @if (canUsePoints && !action.IsOwnAction && ((archive is null && !frozen) || liked.ViewerHearted))
                                     {
                                         <button type="button" class="text-button" disabled="@busy" aria-pressed="@(liked.ViewerHearted ? "true" : "false")" @onclick="() => ToggleHeart(action.Id)">@(liked.ViewerHearted ? "Ta bort hjärta" : "Ge hjärta")</button>
                                     }
-                                    @if (canUsePoints && PointsCommands.GiftsEnabled && !action.IsOwnAction && archive is null)
+                                    @if (canUsePoints && PointsCommands.GiftsEnabled && !action.IsOwnAction && archive is null && !frozen)
                                     {
                                         @GiftControls(action.Id)
                                     }
@@ -215,6 +243,7 @@
                                 {
                                     @FlagControls(action.Id, "Anmäl åtgärdstexten")
                                 }
+                                }
                             </article>
                         </li>
                     }
@@ -225,6 +254,10 @@
         @if (canWrite && archive is not null)
         {
             <p>Arkiverade rapporter tar inte emot nya åtgärdsuppgifter.</p>
+        }
+        else if (canWrite && visibility.ReportHidden)
+        {
+            <p>Rapporten är dold i väntan på granskning och tar inte emot nya åtgärdsuppgifter.</p>
         }
         else if (canWrite)
         {
@@ -280,6 +313,7 @@
     private bool giftConfirming;
     private PointsGiftDraft giftDraft = new();
     private ReportArchive? archive;
+    private ContentVisibility visibility = ContentVisibility.Nothing;
     private ReportArchiveDraft archiveDraft = new();
     private IReadOnlyList<ReportArchiveEvent> archiveHistory = [];
     // Which item has its flag form open: null = none, Guid.Empty = the report itself, otherwise an action id.
@@ -316,16 +350,16 @@
         error = null;
         try
         {
-            report = await Store.GetAsync(ReportId);
-            actionItems = report is null
-                ? []
-                : await Actions.ListAsync((await AuthenticationStateTask).User, ReportId);
             var viewer = (await AuthenticationStateTask).User;
-            reportPhotoIds = report is null ? new HashSet<Guid>()
-                : await Photos.VisibleReportIdsAsync(viewer, [report.Id]);
-            actionPhotoIds = await Photos.VisibleActionIdsAsync(actionItems.Select(action => action.Id).ToArray());
-            archive = report is null ? null : await Archives.GetAsync(ReportId);
-            archiveHistory = canArchive && report is not null
+            report = await Store.GetAsync(ReportId);
+            visibility = report is null ? ContentVisibility.Nothing : await Flags.GetVisibilityAsync(viewer, ReportId);
+            // A flag-hidden report is withheld from everyone but admins and its author: nothing else is loaded.
+            var shown = report is not null && !visibility.ReportWithheld;
+            actionItems = shown ? await Actions.ListAsync(viewer, ReportId) : [];
+            reportPhotoIds = shown ? await Photos.VisibleReportIdsAsync(viewer, [report!.Id]) : new HashSet<Guid>();
+            actionPhotoIds = await Photos.VisibleActionIdsAsync(viewer, actionItems.Select(action => action.Id).ToArray());
+            archive = shown ? await Archives.GetAsync(ReportId) : null;
+            archiveHistory = canArchive && shown
                 ? await Archives.HistoryAsync(viewer, ReportId)
                 : [];
             appreciation = await PointsCommands.ListForActionsAsync(viewer, actionItems.Select(action => action.Id).ToArray());
@@ -335,6 +369,7 @@
         {
             Logger.LogError(exception, "Rapporten eller åtgärdsuppgifterna kunde inte hämtas.");
             report = null;
+            visibility = ContentVisibility.Nothing;
             actionItems = [];
             reportPhotoIds = new HashSet<Guid>();
             actionPhotoIds = new HashSet<Guid>();
@@ -386,6 +421,7 @@
             }
             await Reload();
             status = added ? "Åtgärdsuppgiften är publicerad."
+                : visibility.ReportHidden ? "Rapporten är dold i väntan på granskning och tar inte emot nya åtgärdsuppgifter."
                 : "Rapporten finns inte längre eller är inte publicerad.";
         }
         catch (ValidationException exception) { error = exception.Message; }
@@ -426,6 +462,7 @@
                 ActionConfirmationResult.AlreadyConfirmed => "Ditt konto har redan bekräftat uppgiften.",
                 ActionConfirmationResult.OwnAction => "Ditt konto kan inte bekräfta en egen uppgift.",
                 ActionConfirmationResult.Withdrawn => "Ditt konto har tagit tillbaka sin bekräftelse och kan inte bekräfta uppgiften igen.",
+                ActionConfirmationResult.Hidden => "Innehåll som är dolt i väntan på granskning kan inte bekräftas.",
                 _ => "Åtgärdsuppgiften finns inte längre."
             };
         }
@@ -553,7 +590,8 @@
             flagTarget = null;
             flagDraft = new();
             status = ContentFlagText.Result(result);
-            if (result == FlagResult.NotFound) await Reload();
+            // With hide-on-flag the flagged content may now be hidden for this viewer.
+            if (result == FlagResult.NotFound || Mode.HideOnFlag) await Reload();
         }
         catch (ValidationException exception) { error = exception.Message; }
         catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att anmäla innehåll."; }

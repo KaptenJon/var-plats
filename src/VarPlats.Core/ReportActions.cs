@@ -10,7 +10,7 @@ public sealed record ReportAction(
     Guid Id, string Description, DateTimeOffset CreatedAt, int ConfirmationCount,
     bool IsOwnAction, bool HasConfirmed, int WithdrawnCount = 0, bool HasWithdrawn = false);
 
-public enum ActionConfirmationResult { Confirmed, AlreadyConfirmed, OwnAction, NotFound, Withdrawn }
+public enum ActionConfirmationResult { Confirmed, AlreadyConfirmed, OwnAction, NotFound, Withdrawn, Hidden }
 
 public enum ConfirmationWithdrawalResult { Withdrawn, NotConfirmed, Archived, NotFound }
 

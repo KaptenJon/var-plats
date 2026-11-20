@@ -23,9 +23,15 @@ public sealed class DatabasePhotoWriter(
         Guid authorId, Report report, SanitizedPhoto photo, CancellationToken cancellationToken)
     {
         RequireWrite(authorId);
+        ReportSubmissionEntity? submission = null;
+        // With direct publishing the photo has passed the full pipeline (size, format, ClamAV before and after the
+        // re-encode) before this point; publication then re-reads it against its hash like an admin approval does.
+        Func<ReportDbContext, Task>? publish = mode.DirectPublish
+            ? db => ReportPublication.PublishAsync(db, submission!, options, storage, cancellationToken)
+            : null;
         await SaveAsync(photo, db =>
         {
-            db.ReportSubmissions.Add(new()
+            db.ReportSubmissions.Add(submission = new()
             {
                 Id = report.Id,
                 Title = report.Title,
@@ -44,7 +50,7 @@ public sealed class DatabasePhotoWriter(
                 ContentType = "",
                 Sha256 = ""
             };
-        }, null, cancellationToken);
+        }, null, cancellationToken, publish);
         return report;
     }
 
@@ -98,7 +104,7 @@ public sealed class DatabasePhotoWriter(
 
     private async Task<bool> SaveAsync(
         SanitizedPhoto photo, Func<ReportDbContext, ReportPhotoEntity> addParent, Guid? reportId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Func<ReportDbContext, Task>? beforeCommit = null)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -106,7 +112,9 @@ public sealed class DatabasePhotoWriter(
         if (reportId is Guid publishedId
             && (!await db.Reports.AnyAsync(report => report.Id == publishedId, cancellationToken)
                 || (mode.Archive && await db.ReportArchives.AnyAsync(
-                    archive => archive.ReportId == publishedId, cancellationToken))))
+                    archive => archive.ReportId == publishedId, cancellationToken))
+                || (mode.HideOnFlag && await FlagVisibility.IsReportHiddenAsync(
+                    db, publishedId, mode.HideOnFlagMinimumFlags, cancellationToken))))
             return false;
 
         var entries = await ReconcileAsync(db, cancellationToken);
@@ -139,6 +147,8 @@ public sealed class DatabasePhotoWriter(
             entity.Sha256 = Convert.ToHexStringLower(SHA256.HashData(photo.Bytes.Span));
             db.ReportPhotos.Add(entity);
             await db.SaveChangesAsync(cancellationToken);
+            if (beforeCommit is not null)
+                await beforeCommit(db);
             commitAttempted = true;
             await transaction.CommitAsync(cancellationToken);
             return true;

@@ -40,6 +40,7 @@ public static class PointsText
         HeartResult.Removed => "Ditt hjärta är borttaget.",
         HeartResult.OwnAction => "Du kan inte ge hjärta till en egen åtgärd.",
         HeartResult.Archived => "Arkiverade rapporter tar inte emot nya hjärtan.",
+        HeartResult.Hidden => "Innehåll som är dolt i väntan på granskning tar inte emot nya hjärtan.",
         _ => "Åtgärdsuppgiften finns inte längre."
     };
 
@@ -52,6 +53,7 @@ public static class PointsText
         GiftResult.OverTransferLimit => "Det är fler poäng än vad som får skickas åt gången. Inga poäng skickades.",
         GiftResult.OverDailyLimit => "Du har nått gränsen för hur många poäng du får skicka per dygn. Inga poäng skickades.",
         GiftResult.Archived => "Arkiverade rapporter tar inte emot poäng. Inga poäng skickades.",
+        GiftResult.Hidden => "Innehåll som är dolt i väntan på granskning tar inte emot poäng. Inga poäng skickades.",
         _ => "Åtgärdsuppgiften finns inte längre. Inga poäng skickades."
     };
 }

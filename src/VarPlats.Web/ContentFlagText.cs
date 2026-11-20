@@ -4,6 +4,12 @@ namespace VarPlats.Web;
 
 public static class ContentFlagText
 {
+    /// <summary>Neutral note shown where flag-hidden content would be. It says nothing about who flagged or why.</summary>
+    public const string HiddenNote = "Dolt i väntan på granskning";
+
+    public const string HiddenExplanation =
+        "Innehållet har anmälts och visas inte förrän en moderator har granskat det.";
+
     public static string Reason(FlagReason reason) => reason switch
     {
         FlagReason.PersonalData => "Personuppgifter, till exempel namn, adress eller registreringsnummer",

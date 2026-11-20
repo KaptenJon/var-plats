@@ -192,6 +192,7 @@ public sealed class ReportWorkflowDatabaseTests
         var withdrawal = await CheckConfirmationWithdrawalAsync(contexts, firstMember, secondMember, admin, firstUser.Id);
         await db.GetService<IMigrator>().MigrateAsync("20261120090000_Points");
         await PointsDatabaseScenario.RunAsync(contexts, userManager);
+        await HideOnFlagDatabaseScenario.RunAsync(contexts, userManager, photoScenario.Storage);
 
         await DeleteAccountViaEndpoint(connectionString, firstUser.Id, legacy.Id);
         await using (var check = contexts.CreateDbContext())

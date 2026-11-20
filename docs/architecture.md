@@ -79,6 +79,19 @@ utan anmälarens konto, och kan avfärda anmälningarna eller ta bort innehålle
 med de befintliga borttagningskommandona. Unikt index, dygnsgräns per konto och
 kaskadradering hålls i databasen.
 
+Direktpublicering (`Reporting:DirectPublish`) och döljande vid anmälan
+(`Reporting:HideOnFlag`) är två avstängda brytare utan egen migration.
+Direktpublicering sparar inskicket och godkänner det i samma transaktion via
+samma kod som administratörens godkännande (`ReportPublication`), så
+kontolänken och bildkontrollen är desamma. Döljandet lagras inte: läsningarna
+för karta, lista, API och närliggande tips filtrerar bort rapporter med minst
+`HideOnFlag:MinimumFlags` öppna anmälningar från andra konton än upphovskontot
+(`FlagVisibility`), och rapportsidan och bildvägarna visar dolt innehåll bara
+för administratörer och upphovskontot. Att avfärda anmälningarna visar
+innehållet igen; borttagning går genom de befintliga kommandona och
+poänghändelsernas återföring. Dolt innehåll tar inte emot nya åtgärder,
+bekräftelser, hjärtan eller gåvor.
+
 Arkivering är också en separat avstängd skiva med egen migration
 (`ReportArchive`) och egen inställning, `Reporting:ArchiveEnabled`, som kräver
 arbetsflödet. Admin kan arkivera en publicerad rapport som åtgärdad, inaktuell,

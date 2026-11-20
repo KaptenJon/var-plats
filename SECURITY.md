@@ -34,6 +34,41 @@ inte löser:
       regelversion `poang-v1`); ägaren har inte beslutat andra värden.
       Spärrar, bedrägeribedömning och administratörsåterkallelse av poäng saknas.
 
+## Direktpublicering och döljande vid anmälan (avstängt, inte i releasen)
+
+Ägaren beslutade 2026-11-20 om en ny modereringsmodell: rapporter ska inte
+behöva godkännas i förväg, men anmält innehåll ska försvinna direkt och gå till
+en moderator. Koden finns bakom två egna brytare, båda `false` som standard och
+inte påslagna i `release.yml`, `compose.yml` eller `.env.example`. Att slå på dem
+i releasen är ett separat ägarsteg.
+
+- `Reporting:DirectPublish` kräver `Reporting:WorkflowEnabled` och
+  `Reporting:PublicWrites` (uppstarten stoppas annars) och lättar inte på några
+  inloggnings- eller skrivkrav. **Direktpublicering betyder att ogranskat
+  innehåll, även bilder, är publikt tills någon anmäler det eller en
+  administratör tar bort det.** Bilder går fortfarande genom storleks- och
+  formatkontroll, strikt JPEG-kontroll, ClamAV före och efter omkodning och
+  metadatarensning, och läses tillbaka mot sin hash i samma transaktion som
+  publiceringen. Bildkoden upptäcker inte ansikten, personer eller
+  personuppgifter i pixlar.
+- `Reporting:HideOnFlag` kräver `Reporting:FlagsEnabled`. Innehåll döljs vid
+  läsning så länge minst `HideOnFlag:MinimumFlags` (standard 1, 1–50, valideras
+  vid uppstart även när brytaren är av) öppna anmälningar kommer från andra
+  konton än upphovskontot. Dolt innehåll syns bara för administratörer och
+  upphovskontot, även bilderna (`/photos/...`). `content_flags` nämns inte i
+  SQL medan brytaren är av.
+- Missbruksrisk: med tröskeln 1 kan ett enda konto dölja innehåll. Upphovskontots
+  egna anmälningar räknas inte, ett konto kan anmäla ett objekt en gång (även
+  efter återställning), högst 20 anmälningar per konto och dygn samt
+  skrivgränsen `Reporting:RateLimits:Flags` gäller. Samordnade konton (Sybil)
+  kan ändå dölja innehåll tills en moderator återställer det; överklaganden och
+  historik över döljanden saknas.
+
+Före aktivering krävs dessutom, utöver punkterna ovan: bemannad granskningskö
+med svarstid för både dolt och direktpublicerat innehåll, ägarens beslut om
+tröskeln och uppdaterade villkor och integritetsinformation (texterna under
+`docs/legal/` beskriver inte den här modellen och behöver ägargranskning).
+
 Adminborttagning är fortfarande permanent utan granskningshistorik, spam-/Sybil-
 skydd över många konton saknas och API-gränsen blir en gemensam gräns bakom Caddy.
 
@@ -250,7 +285,9 @@ Plats är inte automatiskt ofarlig bara för att den visas på en karta.
 förrän integritets-/retentionsbeslut, aktiverade och avvägda rate limits, lagringskvoter, spam-/Sybil-
 skydd, bemannad granskningskö, snabb hantering av direktpublicerade åtgärder,
 granskningshistorik och en återställningsplan är klara.
-Innehåll måste kunna döljas/raderas snabbt. Ingen rapportörsidentitet sparas i
+Innehåll måste kunna döljas/raderas snabbt (`Reporting:HideOnFlag` döljer anmält
+innehåll direkt, men ersätter inte en bemannad kö). Med `Reporting:DirectPublish`
+är ogranskat innehåll, även bilder, publikt tills någon anmäler det. Ingen rapportörsidentitet sparas i
 den publika rapporttabellen; den inaktiva granskningskoden lagrar däremot
 kontolänk i sin separata tabell. Före aktivering måste kontosida, villkor och
 integritetsinformation uppdateras och godkännas för detta flöde.

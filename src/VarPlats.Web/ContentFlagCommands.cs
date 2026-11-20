@@ -4,6 +4,24 @@ using VarPlats.Core;
 namespace VarPlats.Web;
 
 /// <summary>
+/// Hide-on-flag state for one viewer. <see cref="CanSeeHiddenReport"/> is true for admins and the report's
+/// author; a hidden action text is shown to admins and to its own author (<see cref="ReportAction.IsOwnAction"/>).
+/// </summary>
+public sealed record ContentVisibility(
+    bool ReportHidden, bool CanSeeHiddenReport, IReadOnlySet<Guid> HiddenActionIds, bool IsModerator)
+{
+    public static ContentVisibility Nothing { get; } = new(false, false, new HashSet<Guid>(), false);
+
+    /// <summary>The report's own content (title, text, photo, actions) must not be shown to this viewer.</summary>
+    public bool ReportWithheld => ReportHidden && !CanSeeHiddenReport;
+
+    public bool IsHidden(ReportAction action) => HiddenActionIds.Contains(action.Id);
+
+    /// <summary>The action text and photo must not be shown to this viewer.</summary>
+    public bool ActionWithheld(ReportAction action) => IsHidden(action) && !IsModerator && !action.IsOwnAction;
+}
+
+/// <summary>
 /// Abuse flags on published reports and action texts. Flagging needs a verified member or admin account and
 /// public writes; the queue and dismissal are admin only. Removing flagged content goes through the existing
 /// report and action commands, whose deletes cascade to the flags.
@@ -42,6 +60,24 @@ public sealed class ContentFlagCommands(
             throw new InvalidOperationException("Anmälningar kan inte hanteras när skrivningar är avstängda.");
         await RequireModeratorAsync(user, cancellationToken);
         return await Store().DismissAsync(reportId, actionId, cancellationToken);
+    }
+
+    /// <summary>
+    /// What the viewer may see of flag-hidden content on one report page. Hidden content stays readable for admins
+    /// and for its own author; everyone else only gets a neutral note. Without hide-on-flag nothing is hidden and
+    /// content_flags is not read.
+    /// </summary>
+    public async Task<ContentVisibility> GetVisibilityAsync(
+        ClaimsPrincipal viewer, Guid reportId, CancellationToken cancellationToken = default)
+    {
+        if (!mode.HideOnFlag)
+            return ContentVisibility.Nothing;
+        var rights = await VerifyAsync(viewer, cancellationToken);
+        var accountId = ReportCommands.CanReport(viewer) && rights.CanReport
+            && rights.AccountId == ReportCommands.UserId(viewer) ? rights.AccountId : null;
+        var moderator = accountId is not null && rights.CanModerate && ReportCommands.CanModerate(viewer);
+        var hidden = await Store().GetHiddenAsync(reportId, accountId, cancellationToken);
+        return new(hidden.ReportHidden, moderator || hidden.ViewerIsReportAuthor, hidden.HiddenActionIds, moderator);
     }
 
     private async Task RequireModeratorAsync(ClaimsPrincipal user, CancellationToken cancellationToken)

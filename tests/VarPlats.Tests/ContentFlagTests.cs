@@ -174,5 +174,15 @@ public sealed class ContentFlagTests
             Dismissed.Add((reportId, actionId));
             return Task.FromResult(1);
         }
+
+        public HiddenContent Hidden { get; set; } = HiddenContent.None;
+        public List<(Guid ReportId, Guid? ViewerId)> HiddenReads { get; } = [];
+
+        public Task<HiddenContent> GetHiddenAsync(Guid reportId, Guid? viewerId,
+            CancellationToken cancellationToken = default)
+        {
+            HiddenReads.Add((reportId, viewerId));
+            return Task.FromResult(Hidden);
+        }
     }
 }

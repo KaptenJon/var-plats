@@ -327,6 +327,38 @@ Alla brytare är `false` i Compose-exemplet och i `.env.example`. Release-workfl
 sätter dem till `true`; det kräver fungerande OAuth-konfiguration och de manuella
 databasstegen nedan.
 
+## Direktpublicering och döljande vid anmälan (avstängt, separat ägarsteg)
+
+Ägarbeslut 2026-11-20: rapporter ska inte behöva godkännas i förväg, men anmält
+innehåll ska försvinna direkt och gå till en moderator. Koden finns bakom
+`Reporting:DirectPublish` och `Reporting:HideOnFlag`, båda `false` som standard.
+**De är inte påslagna i `release.yml`, `compose.yml` eller `.env.example`.** Att
+slå på dem i releasen är ett eget ägarsteg (lägg till dem i workflowens
+miljövariabler och i Compose-filen); ingen migration, grant eller ändring i
+deploy-preflighten behövs, eftersom båda bara använder tabeller och behörigheter
+som redan krävs av arbetsflödet, bilderna och anmälningarna.
+
+| Inställning | Standard | Krav (annars stoppas uppstarten) |
+|---|---|---|
+| `Reporting:DirectPublish` | `false` | `Reporting:WorkflowEnabled` och `Reporting:PublicWrites` |
+| `Reporting:HideOnFlag` | `false` | `Reporting:FlagsEnabled` |
+| `HideOnFlag:MinimumFlags` | `1` | Heltal 1–50; valideras även när brytaren är av |
+
+Drift med brytarna på:
+
+- Nya rapporter publiceras direkt. `/moderering` visar bara inskick som kom in
+  innan brytaren slogs på; stäng av den för att återgå till förhandsgranskning
+  (redan publicerade rapporter ligger kvar).
+- Dolt innehåll syns i `/moderering` under Anmält innehåll med texten ”Dolt i
+  väntan på granskning”. **Återställ och visa igen** avfärdar anmälningarna;
+  **Ta bort** raderar innehållet permanent och återför poängen. Samma konton
+  kan inte anmäla ett återställt objekt igen, men andra konton kan.
+- Att stänga av `Reporting:HideOnFlag` visar allt dolt innehåll igen direkt,
+  eftersom döljandet räknas fram vid läsning.
+- Med tröskeln 1 kan ett enda konto dölja innehåll (högst 20 objekt per dygn
+  och konto, plus skrivgränsen för anmälningar). Bevaka kön och höj
+  `HideOnFlag:MinimumFlags` om falska anmälningar blir ett problem.
+
 ## Aktivera alla brytare på Pi (ägarbeslut 2026-11-20)
 
 Ägaren beslutade 2026-11-20 att Pi-releasen ska slå på alla brytare som finns på
@@ -461,7 +493,8 @@ innan riktiga användare bjuds in:
 - [ ] Villkor och integritetsinformation uppdaterade och godkända för rapportering,
       åtgärder, bilder och anmälningar.
 - [ ] Bemannad granskningskö med svarstid, även för direktpublicerade åtgärder och
-      anmälningar.
+      anmälningar, och – innan `Reporting:DirectPublish` eller `Reporting:HideOnFlag`
+      slås på – för direktpublicerade rapporter med bilder och dolt innehåll.
 - [ ] Prov av backup och återställning (databas och bildvolym tillsammans) i en
       separat, tom miljö.
 - [ ] Prov av clamd på Pi:n (ARM64): start, signaturuppdatering, minne och svar
