@@ -112,6 +112,20 @@ båda sina tillstånd eller inget. Läs-API:t får en separat policy i ASP.NET
 Core:s rate limiter per klientadress. Tillståndet ligger i minnet och delas inte
 mellan processer, vilket räcker för en instans på Pi.
 
+Poäng är en separat avstängd skiva med egen migration (`Points`) och egen
+inställning, `Reporting:PointsEnabled`, som kräver arbetsflödet. Belopp och
+gränser ligger under `Points:` och valideras vid start. Grundpoäng skrivs av
+`DatabaseReportActionStore.ConfirmAsync` i samma transaktion som en bekräftelse
+från ett annat konto, en gång per åtgärd. `points_events` är en händelsebok där
+saldot är en summa och återtagningar är motrader (`PointsLedger`);
+återtagande av en bekräftelse och administratörens borttagning av en åtgärd eller
+rapport tar tillbaka poäng i samma transaktion, och `IPointsStore` exponerar
+återtagningskrokar som arkivering eller administratörsbeslut kan anropa. Hjärtan
+(`action_hearts`) ger inga poäng. Gåvor flyttar poäng mellan konton som två rader
+med samma överförings-id. Rapportsidan visar hjärtan och poäng per åtgärd, och
+`/mina-poang` visar kontots eget saldo och historik. Det finns ingen topplista.
+När inställningen är av nämner ingen fråga de nya tabellerna.
+
 Den separat avstängda bildskivan tar emot högst en bild samtidigt med ett nytt
 inskick eller en ny åtgärd. Skanning och metadatafri omkodning sker innan
 texten sparas; filen placeras atomärt och bildmetadata och förälder sparas i
@@ -139,7 +153,9 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
    självbekräftelse; återtagande med historik finns bakom
    `Reporting:ConfirmationWithdrawalEnabled`. Skydd mot samordnad manipulation
    och tvister återstår.
-5. **Poäng:** spårbar regelversion och händelsebok från godkända bekräftelser.
+5. **Poäng:** den avstängda grundskivan (`Reporting:PointsEnabled`) har spårbar
+   regelversion, händelsebok från bekräftelser, hjärtan och poänggåvor;
+   spärrar, bedrägeribedömning och administratörsåterkallelse återstår.
    Ingen belöning för riskfyllda insatser, dubbla konton eller rent antal klick.
 6. **Organisationer:** verifierade organisationer, geografiska områden och
    behörighetsstyrd bevakning/notifiering; inte automatisk officiell felanmälan.

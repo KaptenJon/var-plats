@@ -1,0 +1,112 @@
+@page "/mina-poang"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject PointsCommands PointsCommands
+@inject PointsOptions PointsSettings
+@inject ReportingMode Mode
+@inject ILogger<MyPoints> Logger
+
+<PageTitle>Mina poäng – Vår plats</PageTitle>
+<main class="document">
+    <h1>Mina poäng</h1>
+    @if (!Mode.Points)
+    {
+        <p>Poäng är inte aktiverade i den här miljön.</p>
+    }
+    else if (!allowed)
+    {
+        <p>Logga in med ett behörigt konto utanför återställningsläget för att se dina poäng.</p>
+    }
+    else
+    {
+        <div class="points-note" role="note">
+            <p><strong>@PointsText.SafetyNote</strong></p>
+            <p class="small">Du får @PointsText.Points(PointsSettings.ConfirmedActionPoints) en gång per åtgärd när ett annat konto bekräftar den. Att skapa rapporter eller åtgärder, klicka eller ge hjärtan ger inga poäng. Poäng kan tas tillbaka om en bekräftelse dras tillbaka eller en administratör tar bort åtgärden.</p>
+            <p class="small">Poängen visas bara för dig. Det finns ingen topplista.</p>
+        </div>
+        @if (error is not null)
+        {
+            <p class="error" role="alert">@error</p>
+        }
+        @if (loading)
+        {
+            <p role="status">Hämtar dina poäng…</p>
+        }
+        else if (summary is not null)
+        {
+            <p><strong>Saldo: @PointsText.Points(summary.Balance)</strong></p>
+            @if (PointsCommands.GiftsEnabled)
+            {
+                <p class="small">Skickat senaste dygnet: @PointsText.Points(summary.GiftedToday) av högst @PointsText.Points(PointsSettings.MaxGiftPerDay).</p>
+            }
+            <h2>Historik</h2>
+            @if (summary.History.Count == 0)
+            {
+                <p>Du har inga poänghändelser ännu.</p>
+            }
+            else
+            {
+                <p class="small">Senaste först · högst 200 händelser · regelversionen visar vilka regler som gällde.</p>
+                <ul class="report-list">
+                    @foreach (var item in summary.History)
+                    {
+                        <li>
+                            <article>
+                                <p><strong>@(item.Amount > 0 ? "+" : "")@item.Amount</strong> · @PointsText.Reason(item.Reason, item.Cause)</p>
+                                <p class="small">@item.CreatedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC · regel @item.RuleVersion
+                                    @if (item.ReportId is { } reportId)
+                                    {
+                                        <span> · <a href="@($"/rapporter/{reportId}")">Visa rapporten</a></span>
+                                    }
+                                </p>
+                            </article>
+                        </li>
+                    }
+                </ul>
+            }
+        }
+        <button type="button" class="text-button" disabled="@loading" @onclick="Reload">Uppdatera</button>
+    }
+    <p><a href="/">Tillbaka till kartan</a></p>
+</main>
+
+@code {
+    private PointsSummary? summary;
+    private bool allowed, loading;
+    private string? error;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        allowed = ReportCommands.CanReport((await AuthenticationStateTask).User);
+        if (Mode.Points && allowed)
+            await Reload();
+    }
+
+    private async Task Reload()
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            summary = await PointsCommands.GetOwnAsync((await AuthenticationStateTask).User);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            summary = null;
+            error = "Du har inte behörighet att visa poängen.";
+        }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Poängen kunde inte hämtas.");
+            summary = null;
+            error = "Dina poäng kunde inte hämtas. Försök igen senare.";
+        }
+        finally { loading = false; }
+    }
+}

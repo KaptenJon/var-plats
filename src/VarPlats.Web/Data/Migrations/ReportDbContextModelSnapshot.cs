@@ -18,7 +18,7 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119222822_ReportArchive";
+    public override string LastMigrationId => "20261120090000_Points";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -275,6 +275,24 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("AspNetUserTokens");
             });
 
+        modelBuilder.Entity("VarPlats.Web.Data.ActionHeartEntity", b =>
+            {
+                b.Property<Guid>("ActionId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("AccountId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("ActionId", "AccountId");
+
+                b.HasIndex("AccountId");
+
+                b.ToTable("action_hearts");
+            });
+
         modelBuilder.Entity("VarPlats.Web.Data.ContentFlagEntity", b =>
             {
                 b.Property<Guid>("Id")
@@ -344,6 +362,71 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("LastSignInAtUtc");
 
                 b.ToTable("IdentityAccountActivity");
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.PointsEventEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("AccountId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("ActionId")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("Amount")
+                    .HasColumnType("integer");
+
+                b.Property<Guid?>("ConfirmerId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int>("Reason")
+                    .HasColumnType("integer");
+
+                b.Property<int?>("ReversalCause")
+                    .HasColumnType("integer");
+
+                b.Property<Guid?>("ReversesEventId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("RuleVersion")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<Guid?>("TransferId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ConfirmerId");
+
+                b.HasIndex("ReversesEventId")
+                    .IsUnique();
+
+                b.HasIndex("AccountId", "CreatedAt");
+
+                b.HasIndex("ActionId", "ConfirmerId")
+                    .IsUnique()
+                    .HasFilter("\"Reason\" = 0");
+
+                b.HasIndex("ActionId", "Reason");
+
+                b.HasIndex("TransferId", "Reason")
+                    .IsUnique()
+                    .HasFilter("\"TransferId\" IS NOT NULL");
+
+                b.ToTable("points_events", t =>
+                    {
+                        t.HasCheckConstraint("CK_points_events_RuleVersion", "length(trim(\"RuleVersion\")) BETWEEN 1 AND 32");
+
+                        t.HasCheckConstraint("CK_points_events_Shape", "(\"Reason\" = 0 AND \"Amount\" > 0 AND \"ActionId\" IS NOT NULL AND \"TransferId\" IS NULL AND \"ReversesEventId\" IS NULL AND \"ReversalCause\" IS NULL) OR (\"Reason\" = 1 AND \"Amount\" <> 0 AND \"TransferId\" IS NULL AND \"ConfirmerId\" IS NULL AND \"ReversesEventId\" IS NOT NULL AND \"ReversalCause\" BETWEEN 0 AND 4) OR (\"Reason\" = 2 AND \"Amount\" < 0 AND \"ActionId\" IS NOT NULL AND \"TransferId\" IS NOT NULL AND \"ConfirmerId\" IS NULL AND \"ReversesEventId\" IS NULL AND \"ReversalCause\" IS NULL) OR (\"Reason\" = 3 AND \"Amount\" > 0 AND \"ActionId\" IS NOT NULL AND \"TransferId\" IS NOT NULL AND \"ConfirmerId\" IS NULL AND \"ReversesEventId\" IS NULL AND \"ReversalCause\" IS NULL)");
+                    });
             });
 
         modelBuilder.Entity("VarPlats.Web.Data.ReportActionConfirmationEntity", b =>
@@ -706,6 +789,21 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                     .IsRequired();
             });
 
+        modelBuilder.Entity("VarPlats.Web.Data.ActionHeartEntity", b =>
+            {
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithMany()
+                    .HasForeignKey("AccountId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("VarPlats.Web.Data.ReportActionEntity", null)
+                    .WithMany()
+                    .HasForeignKey("ActionId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
         modelBuilder.Entity("VarPlats.Web.Data.ContentFlagEntity", b =>
             {
                 b.HasOne("VarPlats.Web.Data.ReportActionEntity", null)
@@ -733,6 +831,25 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                     .HasForeignKey("VarPlats.Web.Data.IdentityAccountActivity", "UserId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.PointsEventEntity", b =>
+            {
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithMany()
+                    .HasForeignKey("AccountId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                    .WithMany()
+                    .HasForeignKey("ConfirmerId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                b.HasOne("VarPlats.Web.Data.PointsEventEntity", null)
+                    .WithOne()
+                    .HasForeignKey("VarPlats.Web.Data.PointsEventEntity", "ReversesEventId")
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
         modelBuilder.Entity("VarPlats.Web.Data.ReportActionConfirmationEntity", b =>
