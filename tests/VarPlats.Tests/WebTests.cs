@@ -548,6 +548,30 @@ public sealed class WebTests
         Assert.DoesNotContain(secondId.ToString(), adminQueue, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("google")]
+    [InlineData("github")]
+    public async Task SignedInAccountIsSentToLinkingInsteadOfANewExternalSignIn(string provider)
+    {
+        await using var factory = CreateWorkflowFactory(new ReportWorkflowTestStore());
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        client.DefaultRequestHeaders.Add("X-Synthetic-Role", "Member");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", Guid.NewGuid().ToString());
+        var page = await client.GetStringAsync("/login");
+        var token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"")
+            .Groups[1].Value;
+
+        var response = await client.PostAsync($"/auth/signin/{provider}",
+            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/account/connections?error=signed-in", response.Headers.Location!.OriginalString);
+    }
+
     [Fact]
     public async Task ConfiguredLoginChallengesGoogleOnlyWithAntiforgeryToken()
     {
