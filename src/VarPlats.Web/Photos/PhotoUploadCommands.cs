@@ -95,7 +95,7 @@ public sealed class PhotoProcessor(PhotoOptions options, IPhotoMalwareScanner sc
 
 public sealed class PhotoUploadCommands(
     ReportingMode mode, PhotoOptions options, PhotoProcessor? processor = null, IPhotoWriter? writer = null,
-    IReportAccountAccess? accountAccess = null)
+    IReportAccountAccess? accountAccess = null, WriteRateLimiter? rateLimiter = null)
 {
     public async Task<Report> SubmitReportAsync(
         ClaimsPrincipal user, ReportDraft draft, Stream input, CancellationToken cancellationToken = default)
@@ -103,6 +103,7 @@ public sealed class PhotoUploadCommands(
         var authorId = await RequireWriteAsync(user, cancellationToken);
         ArgumentNullException.ThrowIfNull(draft);
         var report = draft.ToReport();
+        rateLimiter?.Acquire(authorId, WriteKind.Report, WriteKind.Photo);
         return await Processor().ProcessAsync(input, async (photo, token) =>
         {
             await RequireWriteAsync(user, token);
@@ -117,6 +118,7 @@ public sealed class PhotoUploadCommands(
         var authorId = await RequireWriteAsync(user, cancellationToken);
         ArgumentNullException.ThrowIfNull(draft);
         var description = draft.ValidatedDescription();
+        rateLimiter?.Acquire(authorId, WriteKind.Action, WriteKind.Photo);
         return await Processor().ProcessAsync(input, async (photo, token) =>
         {
             await RequireWriteAsync(user, token);
