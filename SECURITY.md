@@ -2,8 +2,40 @@
 
 Detta är en **förhandsgrund**, inte en säkerhetsgranskad, fullständigt lanseringsklar tjänst.
 Använd aldrig verkliga personuppgifter i demo eller test. Den ägargodkända
-`pi-preview`-releasen tar emot kontouppgifter för inloggning; rapportering och
-rapportförfattarlänkning är fortfarande avstängda.
+`pi-preview`-releasen tar emot kontouppgifter för inloggning.
+
+## Ägarbeslut 2026-11-20: alla brytare i Pi-releasen
+
+Ägaren beslutade 2026-11-20 att release-workflowen ska slå på alla brytare som
+finns på `main`: `Reporting:WorkflowEnabled`, `Reporting:PublicWrites`,
+`Reporting:FlagsEnabled`, `Reporting:ArchiveEnabled`,
+`Reporting:ConfirmationWithdrawalEnabled`, `Reporting:PointsEnabled`,
+`Reporting:RateLimits:Enabled` och `Photos:Enabled`. Det är det ägarbeslut som
+punkterna nedan kräver före aktivering. Standardvärdena i koden, `compose.yml`
+och `.env.example` är fortfarande `false`, och startkontrollerna i `Program.cs`
+är oförändrade. Migreringar och grants tillämpas inte automatiskt; ägaren kör dem
+manuellt efter backup, och `deploy-release.sh` vägrar byta webb om de saknas
+(se [docs/operations.md](docs/operations.md#aktivera-alla-brytare-på-pi-ägarbeslut-2026-11-20)).
+Där en punkt nedan säger att en funktion är avstängd eller inte tillämpad på Pi
+gäller det tiden före detta beslut och fortfarande standardkonfigurationen.
+
+Beslutet gör **inte** lanseringsgrinden nedan uppfylld. Öppna punkter som koden
+inte löser:
+
+- [ ] integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor, arkiv,
+      historik över återtagna bekräftelser och poänghändelser;
+- [ ] uppdaterade och godkända villkor och integritetsinformation för dessa flöden;
+- [ ] bemannad granskningskö, även för direktpublicerade åtgärder och anmälningar;
+- [ ] provad backup och återställning av databas och bildvolym tillsammans;
+- [ ] provad clamd på Pi:n (ARM64): start, signaturer, minne och svar;
+- [ ] lastprov på Pi:n med alla brytare på;
+- [ ] ägarbeslut om poängbelopp och gränser. Releasen sätter kodens standardvärden
+      uttryckligen (10 per bekräftad åtgärd, högst 10 per gåva och 30 per dygn,
+      regelversion `poang-v1`); ägaren har inte beslutat andra värden.
+      Spärrar, bedrägeribedömning och administratörsåterkallelse av poäng saknas.
+
+Adminborttagning är fortfarande permanent utan granskningshistorik, spam-/Sybil-
+skydd över många konton saknas och API-gränsen blir en gemensam gräns bakom Caddy.
 
 ## Rapportera privat
 
@@ -144,14 +176,26 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   användare kan själva radera kontot.
 - Den ägargodkända taggade releasen kör `deploy/identity-schema.sql` och den
   separata begränsade granten `deploy/pi-identity-role.sql` på Vår plats-databasen.
-  Rapporttabellen och dess grants ändras inte; `deploy/pi-public-write-role.sql`
-  körs inte.
+  Den kör aldrig `deploy/pi-workflow-migrations.sql`, `deploy/pi-public-write-role.sql`
+  eller `deploy/pi-workflow-grants.sql`; de körs manuellt av ägaren. Releasen gör
+  bara en skrivskyddad kontroll av att de finns. `pi-workflow-grants.sql` ger
+  `varplats_reader` endast de rättigheter koden använder per tabell (ingen
+  UPDATE/DELETE på bilder eller arkivhändelser, ingen UPDATE på bekräftelser och
+  bara SELECT/INSERT på historiken över återtagna bekräftelser; DELETE på
+  bekräftelser ges för återtagandet). Poänghändelseboken `points_events` får
+  bara SELECT/INSERT: återtagningar är motrader, och kontoborttagning raderar
+  kontots rader och nollställer bekräftaren via främmande nycklar som körs som
+  tabellägaren. `action_hearts` får SELECT/INSERT/DELETE eftersom ett hjärta
+  kan tas bort.
 - Lokal skrivning kräver Development och loopback. Aldrig en publik dev-proxy.
 - Gemensam servervalidering, EF-parametrisering, textkodade Leaflet-popupfält
   och Blazors normala HTML-kodning. Inget användarinnehåll går till `MarkupString`.
 - Antiforgery, host-begränsning, HSTS i produktion, icke-root webbcontainer.
-- Publik bilduppladdning är avstängd. Lösenordskonton och betalningar finns
-  inte. Poäng har inget penningvärde och kan inte växlas in.
+- Publik bilduppladdning är avstängd som standard men påslagen i Pi-releasen
+  efter ägarbeslutet 2026-11-20. clamd körs då lokalt som UID 1654 utan
+  nätverksport, med skrivskyddat rotfilsystem och en ARM64-image pinnad med
+  digest. Lösenordskonton och betalningar finns inte. Poäng har inget
+  penningvärde och kan inte växlas in.
 - Poäng, hjärtan och migrationen `20261120090000_Points` är avstängda
   (`Reporting:PointsEnabled=false`) och inte tillämpade på Pi. Inställningen
   kräver `Reporting:WorkflowEnabled`; hjärtan och gåvor kräver dessutom publika

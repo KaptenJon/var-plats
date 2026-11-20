@@ -20,3 +20,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+  clamav:
+    # clamd håller hela signaturdatabasen i minnet (~1 GiB). Lasttesta på Pi.
+    mem_limit: 1536m
+    cpus: 1.0
+    pids_limit: 100
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

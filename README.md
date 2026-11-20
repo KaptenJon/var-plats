@@ -45,12 +45,12 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 | Leaflet-karta, kategorifilter och tillgänglig rapportlista | Aktiverad rapportkö, överklaganden och missbruksskydd |
 | Validering och rapportering i isolerad lokal demo | Aktiverad bildhantering och färdiga modereringsverktyg |
 | Google/GitHub-inloggning med verifierad e-post, passkey/FIDO2 och uttrycklig kontolänkning; publik registrering aktiveras i den godkända Pi-releasen | Aktiverad publik åtgärdsrapportering och missbruksskydd |
-| Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd i förhandsversionen | Tvister och skydd mot samordnad manipulation |
-| Kod för att ta tillbaka en egen bekräftelse med sparad historik, avstängd bakom `Reporting:ConfirmationWithdrawalEnabled` | Överklagande av bekräftelser |
+| Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd som standard men påslagen i Pi-releasen | Tvister och skydd mot samordnad manipulation |
+| Kod för att ta tillbaka en egen bekräftelse med sparad historik, avstängd bakom `Reporting:ConfirmationWithdrawalEnabled` men påslagen i Pi-releasen | Överklagande av bekräftelser |
 | Kod för att anmäla rapporter och åtgärdstexter till administratörer, avstängd bakom `Reporting:FlagsEnabled` | Överklaganden och skydd mot falska anmälningar |
 | Kod för att arkivera och återställa rapporter, avstängd bakom `Reporting:ArchiveEnabled` | Sammanslagning av dubbletter |
 | Skrivgränser per konto och gräns för läs-API:t, avstängda bakom `Reporting:RateLimits:Enabled` | Delade gränser mellan flera instanser och skydd mot många konton (Sybil) |
-| Kod för poäng vid bekräftade åtgärder, hjärtan och poänggåvor, avstängd bakom `Reporting:PointsEnabled` | Bedrägeribedömning, spärrar och administratörsåterkallelse av poäng |
+| Kod för poäng vid bekräftade åtgärder, hjärtan och poänggåvor, avstängd bakom `Reporting:PointsEnabled` men påslagen i Pi-releasen | Bedrägeribedömning, spärrar och administratörsåterkallelse av poäng |
 | EF Core/PostGIS-lagring i lokalt utvecklingsläge | Organisationsbevakning |
 | Läs-API med kartvyfilter, livs-/beredskapskontroller, OTLP vid konfiguration | Betalning, native-app och offlinekartor |
 | Installerbart webb/PWA-skal; kräver nätanslutning | |
@@ -67,18 +67,26 @@ omstart. Bakom Caddy ser appen bara proxyns adress, eftersom `X-Forwarded-For`
 inte litas på, så API-gränsen blir där i praktiken en gemensam gräns för alla
 klienter.
 
-Produktion är **endast läsning som standard** och kräver databas. Kod för
-manuell rapportgranskning finns, men migrationsschemat är inte installerat i
-förhandsversionen. `Reporting:WorkflowEnabled` och `Reporting:PublicWrites`
-är båda avstängda som standard; publika skrivningar kräver uttrycklig aktivering
-av båda, autentisering och separat granskad databasbehörighet. Befintliga
-rapporter kan läsas utan det nya schemat. Den separata migrationen för åtgärder
-och bekräftelser tillämpas inte på Pi eller automatiskt av releaseflödet.
-Identitetsschemat och dess begränsade runtime-grant körs
-endast i den taggade, ägargodkända release-workflowen; rapporttabellens grant
-ändras inte. Innan rapportering kan aktiveras behöver bland annat kontosidan
-och integritetsinformationen uppdateras, och retentionsbeslut och övriga
-lanseringskrav uppdateras och granskas. Demo eller lokala skrivningar i Production stoppar uppstarten.
+Produktion är **endast läsning som standard** och kräver databas.
+`Reporting:WorkflowEnabled` och `Reporting:PublicWrites` är båda avstängda som
+standard; publika skrivningar kräver uttrycklig aktivering av båda,
+autentisering och separat granskad databasbehörighet. Befintliga rapporter kan
+läsas utan det nya schemat. Demo eller lokala skrivningar i Production stoppar uppstarten.
+
+**Ägarbeslut 2026-11-20:** den taggade Pi-releasen slår på alla brytare som finns
+på `main` – granskning, publika skrivningar, åtgärder och bekräftelser, återtagande
+av bekräftelser (`Reporting:ConfirmationWithdrawalEnabled`), anmälningar,
+arkivering, poäng, hjärtan och gåvor (`Reporting:PointsEnabled`), skrivgränser och bilder.
+Poängen använder kodens standardvärden (10 per bekräftad åtgärd, högst 10 per
+gåva och 30 per dygn); ägaren har inte beslutat egna belopp eller gränser. `deploy/compose.yml` och `.env.example`
+behåller `false`, så en vanlig Compose-körning är fortfarande skrivskyddad.
+Migreringarna tillämpas aldrig automatiskt: ägaren tar backup och kör
+`deploy/pi-workflow-migrations.sql` och de begränsade grantfilerna manuellt, och
+releasen avbryter innan webben byts om de saknas. Ordningen och rollback står i
+[docs/operations.md](docs/operations.md#aktivera-alla-brytare-på-pi-ägarbeslut-2026-11-20).
+Beslutet gör **inte** lanseringskraven klara: integritets- och retentionsbeslut,
+villkor och integritetsinformation, bemannad granskningskö, prov av backup och
+återställning, prov av clamd på ARM64 och lastprov på Pi:n är fortfarande öppna.
 Organisationsbevakning blir inte officiell kommunal felanmälan.
 
 Om arbetsflödet senare aktiveras kan ett behörigt konto välja att publicera en
@@ -96,18 +104,20 @@ och ett bekräftelsesteg. Statusen räknas då om utan den. Att bekräftelsen ta
 tillbaka sparas i historiken och visas som ett antal på åtgärden, utan konto.
 Samma konto kan inte bekräfta uppgiften igen, så att statusen inte kan växlas
 fram och tillbaka. Arkiverade rapporter tar inte emot återtaganden. Migrationen
-`ConfirmationWithdrawals` tillämpas inte automatiskt.
+`ConfirmationWithdrawals` tillämpas inte automatiskt; i Pi-releasen ingår den i
+`deploy/pi-workflow-migrations.sql` som ägaren kör manuellt.
 
-### Bilder – kod finns, uppladdning är avstängd
+### Bilder – avstängda som standard, påslagna i Pi-releasen
 
-`Photos:Enabled` är `false` som standard. Den gamla förhandsvisningen behöver
-varken bildtabell, skrivbar bildvolym eller skanner. Bildläsning kräver uttryckligt
-aktiverad autentisering och rapportgranskning; uppladdning kräver dessutom de
-befintliga publika skrivgrindarna och ett behörigt konto. Ingen release, grant
-eller Pi-installation ändras för bilderna. Migrationen `ReportPhotos` ska inte
-tillämpas utan separat granskning, säkerhetskopiering och ägargodkännande.
+`Photos:Enabled` är `false` som standard och behöver då varken bildtabell,
+skrivbar bildvolym eller skanner. Bildläsning kräver uttryckligt aktiverad
+autentisering och rapportgranskning; uppladdning kräver dessutom de befintliga
+publika skrivgrindarna och ett behörigt konto. Pi-releasen sätter
+`PHOTOS_ENABLED=true` (ägarbeslut 2026-11-20) och startar då en lokal clamd
+(Compose-profilen `photos`). Migrationen `ReportPhotos` och dess grants tillämpas
+manuellt efter backup; clamd är ännu inte provad på Pi:n.
 
-Om funktionen någon gång godkänns kan en bild följa med ett nytt inskick eller
+Med funktionen påslagen kan en bild följa med ett nytt inskick eller
 en ny åtgärd. Rapportbilden följer granskningen; ägaren och administratören kan
 se den före publicering. Godkännande med bild stoppas om bilden inte kan
 kontrolleras eller bildfunktionen har stängts av. Åtgärdsbilden visas direkt med
@@ -143,8 +153,9 @@ körs på både x64 och ARM64 i CI.
 - [Bidra och utveckla](CONTRIBUTING.md)
 - [Villkor](docs/legal/terms.md), [integritet](docs/legal/privacy.md)
   och [innehållsregler](docs/legal/content-draft.md). Villkor och
-  integritetsinformation är operatörsgodkända men inte externt juridiskt granskade;
-  innehållsregler gäller inte för publik rapportering, som är avstängd.
+  integritetsinformation är operatörsgodkända men inte externt juridiskt granskade
+  och är ännu inte uppdaterade för rapportering, bilder och anmälningar, som
+  Pi-releasen slår på efter ägarbeslutet 2026-11-20.
 
 Karttiles hämtas direkt från OpenStreetMap med synlig attribution och vanlig
 webbläsarcache. Ingen serviceworker cachelagrar, förhämtar eller hämtar karttiles.
@@ -156,5 +167,6 @@ leverantörens villkor, integritet och attribution innan byte.
 
 Licens- och källkodsinventering för containerdistribution, logg- och
 backuprotation på värden, Pi-modell/RAM/64-bitars OS, modereringsansvar, säker
-drift av bildhantering, poängregler och tile-kapacitet. Ingen betaltjänst har
+drift av bildhantering, poängregler (belopp och gränser; releasen använder
+kodens standardvärden) och tile-kapacitet. Ingen betaltjänst har
 aktiverats.

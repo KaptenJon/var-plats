@@ -25,6 +25,14 @@ jobs:
       - run: dotnet build -c Release --no-restore
       - name: Test solution with isolated PostgreSQL/PostGIS
         run: bash tests/report-workflow-db.test.sh
+      - name: Upload regenerated Pi migration script on mismatch
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pi-workflow-migrations
+          path: /tmp/pi-workflow-migrations.generated.sql
+          if-no-files-found: ignore
+          retention-days: 3
       - run: dotnet format --verify-no-changes --no-restore
       - name: JavaScript syntax
         run: |
@@ -44,6 +52,20 @@ jobs:
           DATABASE_CONNECTION: Host=db;Database=varplats;Username=varplats;Password=ci-placeholder-only
         run: |
           docker compose -f deploy/compose.yml config --quiet
+          docker compose -f deploy/compose.yml --profile photos config --quiet
+          test "$(docker compose -f deploy/compose.yml config --services | sort | tr '\n' ' ')" = "db web "
+          test "$(docker compose -f deploy/compose.yml --profile photos config --services | sort | tr '\n' ' ')" = "clamav db web "
+          plain=$(docker compose -f deploy/compose.yml config --format json)
+          for key in Reporting__PublicWrites Reporting__WorkflowEnabled Reporting__FlagsEnabled \
+              Reporting__ArchiveEnabled Reporting__ConfirmationWithdrawalEnabled Reporting__PointsEnabled \
+              Reporting__RateLimits__Enabled Photos__Enabled; do
+            test "$(jq -r ".services.web.environment.$key" <<< "$plain")" = "false"
+          done
+          released=$(REPORTING_PUBLIC_WRITES=true PHOTOS_ENABLED=true \
+            docker compose -f deploy/compose.yml --profile photos config --format json)
+          test "$(jq -r '.services.web.environment.Reporting__PublicWrites' <<< "$released")" = "true"
+          test "$(jq -r '.services.web.environment.Photos__Enabled' <<< "$released")" = "true"
+          jq -e '.services.clamav.image | test("@sha256:[a-f0-9]{64}$")' <<< "$released"
           rendered_url=$(docker compose -f deploy/compose.yml config --format json | jq -r '.services.web.environment.Map__TileUrl')
           test "$rendered_url" = "$TILE_URL"
   arm64-smoke:
@@ -123,6 +145,52 @@ jobs:
           END
           $test$;
           RESET ROLE;
+          SQL
+          # Pi-ordningen: migreringar (två gånger, idempotent), skrivgrant, arbetsflödesgrants.
+          for script in pi-workflow-migrations.sql pi-workflow-migrations.sql \
+              pi-public-write-role.sql pi-workflow-grants.sql; do
+            docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -q -v ON_ERROR_STOP=1 \
+              < "deploy/$script"
+          done
+          docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 <<'SQL'
+          DO $test$
+          DECLARE
+              item record;
+          BEGIN
+              IF (SELECT count(*) FROM "__EFMigrationsHistory") <> 10 THEN
+                  RAISE EXCEPTION 'Expected all ten EF migrations to be recorded';
+              END IF;
+              FOR item IN SELECT * FROM (VALUES
+                  ('report_submissions', 'SELECT', true), ('report_submissions', 'INSERT', true),
+                  ('report_submissions', 'UPDATE', true), ('report_submissions', 'DELETE', false),
+                  ('report_actions', 'INSERT', true), ('report_actions', 'DELETE', true),
+                  ('report_actions', 'UPDATE', false),
+                  ('report_action_confirmations', 'INSERT', true), ('report_action_confirmations', 'DELETE', true),
+                  ('report_action_confirmations', 'UPDATE', false),
+                  ('report_action_confirmation_withdrawals', 'INSERT', true),
+                  ('report_action_confirmation_withdrawals', 'UPDATE', false),
+                  ('report_action_confirmation_withdrawals', 'DELETE', false),
+                  ('points_events', 'SELECT', true), ('points_events', 'INSERT', true),
+                  ('points_events', 'UPDATE', false), ('points_events', 'DELETE', false),
+                  ('points_events', 'TRUNCATE', false),
+                  ('action_hearts', 'INSERT', true), ('action_hearts', 'DELETE', true),
+                  ('action_hearts', 'UPDATE', false),
+                  ('report_photos', 'INSERT', true), ('report_photos', 'UPDATE', false),
+                  ('report_photos', 'DELETE', false),
+                  ('content_flags', 'INSERT', true), ('content_flags', 'UPDATE', true),
+                  ('content_flags', 'DELETE', false),
+                  ('report_archives', 'INSERT', true), ('report_archives', 'DELETE', true),
+                  ('report_archives', 'UPDATE', false),
+                  ('report_archive_events', 'INSERT', true), ('report_archive_events', 'DELETE', false),
+                  ('reports', 'INSERT', true), ('reports', 'DELETE', true), ('reports', 'UPDATE', false),
+                  ('report_photos', 'TRUNCATE', false), ('content_flags', 'TRUNCATE', false)
+              ) AS expected(tbl, privilege, allowed) LOOP
+                  IF has_table_privilege('varplats_reader', item.tbl, item.privilege) <> item.allowed THEN
+                      RAISE EXCEPTION 'Unexpected % privilege on % for varplats_reader', item.privilege, item.tbl;
+                  END IF;
+              END LOOP;
+          END
+          $test$;
           SQL
           docker compose -f deploy/compose.yml exec -T db psql -U varplats -d varplats -v ON_ERROR_STOP=1 \
             -c "SELECT PostGIS_Version();" \
