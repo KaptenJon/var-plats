@@ -4,7 +4,7 @@ using VarPlats.Core;
 namespace VarPlats.Web.Data;
 
 public sealed class DatabaseReportActionStore(
-    IDbContextFactory<ReportDbContext> factory, ReportingMode mode) : IReportActionStore
+    IDbContextFactory<ReportDbContext> factory, ReportingMode mode, PointsOptions? points = null) : IReportActionStore
 {
     public async Task<IReadOnlyList<ReportAction>> ListAsync(
         Guid reportId, Guid? viewerId, CancellationToken cancellationToken = default)
@@ -59,7 +59,12 @@ public sealed class DatabaseReportActionStore(
         RequireWrite();
         RequireAccount(accountId);
         var createdAt = DateTimeOffset.UtcNow;
+        var pointsOptions = mode.Points ? Points() : null;
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        // With points on, the confirmation and its award commit together. Without points no ledger table is named.
+        await using var transaction = mode.Points ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+        if (transaction is not null)
+            await PointsLedger.LockActionAsync(db, actionId, cancellationToken);
         var inserted = await db.Database.ExecuteSqlAsync($"""
             INSERT INTO "report_action_confirmations" ("ActionId", "AccountId", "CreatedAt")
             SELECT "Id", {accountId}, {createdAt}
@@ -69,7 +74,14 @@ public sealed class DatabaseReportActionStore(
             ON CONFLICT ("ActionId", "AccountId") DO NOTHING;
             """, cancellationToken);
         if (inserted == 1)
+        {
+            if (transaction is not null)
+            {
+                await PointsLedger.AwardAsync(db, actionId, null, pointsOptions!, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
             return ActionConfirmationResult.Confirmed;
+        }
 
         var action = await db.ReportActions.AsNoTracking()
             .Where(candidate => candidate.Id == actionId && candidate.ReportId == reportId)
@@ -84,10 +96,26 @@ public sealed class DatabaseReportActionStore(
         Guid reportId, Guid actionId, CancellationToken cancellationToken = default)
     {
         RequireWrite();
+        var pointsOptions = mode.Points ? Points() : null;
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        return await db.ReportActions.Where(action => action.Id == actionId && action.ReportId == reportId)
+        if (pointsOptions is null)
+            return await db.ReportActions.Where(action => action.Id == actionId && action.ReportId == reportId)
+                .ExecuteDeleteAsync(cancellationToken) > 0;
+
+        // Admin removal takes back the award in the same transaction. The ledger keeps the action id for history.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await PointsLedger.LockActionAsync(db, actionId, cancellationToken);
+        var removed = await db.ReportActions.Where(action => action.Id == actionId && action.ReportId == reportId)
             .ExecuteDeleteAsync(cancellationToken) > 0;
+        if (removed)
+            await PointsLedger.ReverseAwardsAsync(db, actionId, null, PointsReversalCause.ActionRemoved, pointsOptions,
+                cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return removed;
     }
+
+    private PointsOptions Points()
+        => points ?? throw new InvalidOperationException("Poänginställningar saknas.");
 
     private void RequireWorkflow()
     {

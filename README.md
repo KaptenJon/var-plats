@@ -48,7 +48,8 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 | Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd i förhandsversionen | Tvister, återtagande och skydd mot samordnad manipulation |
 | Kod för att anmäla rapporter och åtgärdstexter till administratörer, avstängd bakom `Reporting:FlagsEnabled` | Överklaganden och skydd mot falska anmälningar |
 | Kod för att arkivera och återställa rapporter, avstängd bakom `Reporting:ArchiveEnabled` | Sammanslagning av dubbletter |
-| EF Core/PostGIS-lagring i lokalt utvecklingsläge | Poäng och organisationsbevakning |
+| Kod för poäng vid bekräftade åtgärder, hjärtan och poänggåvor, avstängd bakom `Reporting:PointsEnabled` | Bedrägeribedömning, spärrar och administratörsåterkallelse av poäng |
+| EF Core/PostGIS-lagring i lokalt utvecklingsläge | Organisationsbevakning |
 | Läs-API med kartvyfilter, livs-/beredskapskontroller, OTLP vid konfiguration | Betalning, native-app och offlinekartor |
 | Installerbart webb/PWA-skal; kräver nätanslutning | |
 

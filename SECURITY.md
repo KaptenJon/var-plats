@@ -114,8 +114,42 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
 - Gemensam servervalidering, EF-parametrisering, textkodade Leaflet-popupfält
   och Blazors normala HTML-kodning. Inget användarinnehåll går till `MarkupString`.
 - Antiforgery, host-begränsning, HSTS i produktion, icke-root webbcontainer.
-- Publik bilduppladdning är avstängd. Lösenordskonton, betalningar och verkliga
-  poäng finns inte.
+- Publik bilduppladdning är avstängd. Lösenordskonton och betalningar finns
+  inte. Poäng har inget penningvärde och kan inte växlas in.
+- Poäng, hjärtan och migrationen `20261120090000_Points` är avstängda
+  (`Reporting:PointsEnabled=false`) och inte tillämpade på Pi. Inställningen
+  kräver `Reporting:WorkflowEnabled`; hjärtan och gåvor kräver dessutom publika
+  skrivningar och ett verifierat medlems- eller administratörskonto. När
+  inställningen är av nämner ingen databasfråga `points_events` eller
+  `action_hearts`.
+  - Poäng skapas bara när ett annat konto bekräftar en åtgärd, i samma
+    transaktion som bekräftelsen, och bara en gång per åtgärd oavsett antal
+    bekräftelser. Självbekräftelse är redan förbjuden. Att skapa rapporter eller
+    åtgärder, klicka eller ge hjärtan ger inga poäng. Ingen topplista finns.
+  - `points_events` är en händelsebok som bara får nya rader: saldot är summan
+    av kontots rader, varje rad sparar regelversion (`Points:RuleVersion`) och
+    en återtagning är en ny motrad som pekar på raden den tar tillbaka (högst
+    en per rad, unikt index). Samma bekräftande konto kan inte ge poäng till
+    samma åtgärd två gånger, så att dra tillbaka och bekräfta igen ger inget.
+  - Återtagningskrok: `IPointsStore.ReverseConfirmationAsync` (för kommande
+    återtagande av bekräftelser; ger poäng från en kvarvarande bekräftelse om en
+    sådan finns) och `ReverseActionAsync` (arkivering eller administratörsbeslut).
+    Administratörens borttagning av en åtgärd eller rapport tar redan tillbaka
+    poängen i samma transaktion. Arkivering tar inte tillbaka poäng i dag.
+  - Hjärtan är en per konto och åtgärd, kan tas bort och ger aldrig poäng.
+  - Gåvor flyttar poäng från givarens saldo till åtgärdens konto och skapar
+    aldrig nya poäng; två rader med samma `TransferId` summerar till noll. Gåvor
+    till egna åtgärder nekas, saldot måste räcka och `Points:MaxGiftPerTransfer`
+    och `Points:MaxGiftPerDay` begränsar dem. Givarens gåvor serialiseras med ett
+    advisory lock per konto. Arkiverade rapporter tar inte emot nya hjärtan eller
+    gåvor. Mottagaren ser inte vilket konto som skickade.
+  - Händelseboken har ingen främmande nyckel till åtgärder, så historiken finns
+    kvar när en åtgärd tas bort. Kontots egna rader och hjärtan raderas med
+    kontot; ett raderat bekräftande konto nollställs i raden men poängen står kvar.
+  - Ett saldo kan bli negativt efter en återtagning; då går det inte att ge gåvor.
+  - Poäng ges aldrig för farliga insatser. Åtgärder har ingen riskmarkering, så
+    gränssnittet visar säkerhetstexten vid poängen i stället för att försöka
+    bedöma risk.
 - Kartattribution och referer bevaras; ingen tile-prefetch/offline-cache.
 - PR-workflows får read-only-token, inga repository secrets och inget
   `pull_request_target` som exekverar extern kod.
@@ -144,7 +178,10 @@ driftavbrott samt juridisk information och retentionsrutiner måste lösas och
 godkännas. Ingen publik uppladdning innan alla lanseringskrav är uppfyllda.
 
 Poäng behöver självbekräftelseförbud, oberoende bekräftelse, historik, spärrar,
-bedrägeribedömning och återkallelse. Organisationers områden och dataåtkomst
+bedrägeribedömning och återkallelse. Den avstängda poängskivan har
+självbekräftelseförbud, bekräftelse från annat konto, historik och
+återtagningskrokar; spärrar, bedrägeribedömning och ett administratörsgränssnitt
+för återkallelse saknas och måste finnas före aktivering. Organisationers områden och dataåtkomst
 behöver separat behörighetsmodell. Betalning tillkommer först efter avtal/analys.
 
 Driften behöver TLS, kända proxies, SELECT-only runtime-roll när identitet är av,

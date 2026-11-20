@@ -7,6 +7,8 @@
 @inject ReportActionCommands Actions
 @inject ContentFlagCommands Flags
 @inject ReportArchiveCommands Archives
+@inject PointsCommands PointsCommands
+@inject PointsOptions PointsSettings
 @inject ReportingMode Mode
 @inject PhotoOptions PhotoSettings
 @inject PhotoUploadCommands PhotoUploads
@@ -119,6 +121,17 @@
             <h2 id="actions-heading">Uppgivna åtgärder</h2>
             <p>Det här är uppgifter från konton, inte en kontroll av platsen. En bekräftelse betyder att ett annat konto instämmer; vi har inte verifierat en fysisk person eller arbetets säkerhet.</p>
             <p>Bekräfta bara uppgifter du själv kan stå för. Utsätt dig inte för fara för att kontrollera en plats.</p>
+            @if (Mode.Points)
+            {
+                <div class="points-note" role="note">
+                    <p><strong>@PointsText.SafetyNote</strong></p>
+                    <p class="small">Den som gjort åtgärden får @PointsText.Points(PointsSettings.ConfirmedActionPoints) en gång när ett annat konto bekräftar den. Hjärtan visar uppskattning men ger inga poäng. @(PointsCommands.GiftsEnabled ? "Skickade poäng dras från givarens eget saldo." : "")</p>
+                    @if (ownBalance is { } balance)
+                    {
+                        <p class="small">Ditt saldo: @PointsText.Points(balance) · <a href="/mina-poang">Mina poäng</a></p>
+                    }
+                </div>
+            }
             @if (Mode.WorkflowEnabled)
             {
                 <button type="button" class="text-button" disabled="@busy" @onclick="Refresh">Uppdatera åtgärder och status</button>
@@ -156,6 +169,18 @@
                                 else if (canWrite)
                                 {
                                     <button type="button" class="text-button" disabled="@busy" @onclick="() => Confirm(action.Id)">Bekräfta uppgiften</button>
+                                }
+                                @if (Mode.Points && appreciation.TryGetValue(action.Id, out var liked))
+                                {
+                                    <p class="small"><span aria-hidden="true">♥</span> @PointsText.Hearts(liked.Hearts) · @PointsText.Points(liked.Points) till åtgärden</p>
+                                    @if (canUsePoints && !action.IsOwnAction && (archive is null || liked.ViewerHearted))
+                                    {
+                                        <button type="button" class="text-button" disabled="@busy" aria-pressed="@(liked.ViewerHearted ? "true" : "false")" @onclick="() => ToggleHeart(action.Id)">@(liked.ViewerHearted ? "Ta bort hjärta" : "Ge hjärta")</button>
+                                    }
+                                    @if (canUsePoints && PointsCommands.GiftsEnabled && !action.IsOwnAction && archive is null)
+                                    {
+                                        @GiftControls(action.Id)
+                                    }
                                 }
                                 @if (canRemove)
                                 {
@@ -220,7 +245,13 @@
     private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>(), actionPhotoIds = new HashSet<Guid>();
     private Guid? loadedReportId;
     private int photoFieldVersion;
-    private bool canWrite, canRemove, canFlag, canArchive, archiveFormOpen, loading = true, busy;
+    private bool canWrite, canRemove, canFlag, canArchive, canUsePoints, archiveFormOpen, loading = true, busy;
+    private IReadOnlyDictionary<Guid, ActionAppreciation> appreciation = new Dictionary<Guid, ActionAppreciation>();
+    private int? ownBalance;
+    // Gift dialog: which action it is open for, and whether the confirm step is showing.
+    private Guid? giftTarget;
+    private bool giftConfirming;
+    private PointsGiftDraft giftDraft = new();
     private ReportArchive? archive;
     private ReportArchiveDraft archiveDraft = new();
     private IReadOnlyList<ReportArchiveEvent> archiveHistory = [];
@@ -239,12 +270,14 @@
             photoFieldVersion++;
             flagTarget = null;
             archiveFormOpen = false;
+            giftTarget = null;
         }
         var user = (await AuthenticationStateTask).User;
         canArchive = Mode.CanArchive && ReportCommands.CanModerate(user);
         canFlag = Mode.CanFlag && ReportCommands.CanReport(user);
         canWrite = Mode.PublicWorkflow && ReportCommands.CanReport(user);
         canRemove = Mode.PublicWorkflow && ReportCommands.CanModerate(user);
+        canUsePoints = Mode.CanUsePoints && ReportCommands.CanReport(user);
         await Reload();
     }
 
@@ -266,6 +299,8 @@
             archiveHistory = canArchive && report is not null
                 ? await Archives.HistoryAsync(viewer, ReportId)
                 : [];
+            appreciation = await PointsCommands.ListForActionsAsync(viewer, actionItems.Select(action => action.Id).ToArray());
+            ownBalance = await LoadBalance(viewer);
         }
         catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
         {
@@ -276,6 +311,8 @@
             actionPhotoIds = new HashSet<Guid>();
             archive = null;
             archiveHistory = [];
+            appreciation = new Dictionary<Guid, ActionAppreciation>();
+            ownBalance = null;
             error = "Rapporten kunde inte hämtas. Försök igen senare.";
         }
         finally { loading = false; }
@@ -509,6 +546,118 @@
         {
             Logger.LogError(exception, "Rapporten kunde inte återställas.");
             error = "Rapporten kunde inte återställas. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task<int?> LoadBalance(System.Security.Claims.ClaimsPrincipal viewer)
+    {
+        if (!canUsePoints) return null;
+        try { return (await PointsCommands.GetOwnAsync(viewer)).Balance; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    private async Task ToggleHeart(Guid actionId)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var result = await PointsCommands.ToggleHeartAsync((await AuthenticationStateTask).User, ReportId, actionId);
+            await Reload();
+            status = PointsText.Heart(result);
+        }
+        catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att ge hjärtan."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Hjärtat kunde inte sparas.");
+            error = "Hjärtat kunde inte sparas. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private RenderFragment GiftControls(Guid actionId) => __builder =>
+    {
+        var formId = $"gift-{actionId:N}";
+        if (giftTarget != actionId)
+        {
+            <button type="button" class="text-button" disabled="@busy" @onclick="() => OpenGift(actionId)">Skicka poäng</button>
+            return;
+        }
+        if (giftConfirming)
+        {
+            <div class="flag-form" role="group" aria-labelledby="@($"{formId}-confirm")">
+                <p id="@($"{formId}-confirm")"><strong>Skicka @PointsText.Points(giftDraft.Amount) till kontot som gjorde åtgärden?</strong></p>
+                <p class="small">Poängen dras från ditt saldo@(ownBalance is { } balance ? $" ({PointsText.Points(balance)})" : "") och kan inte ångras. Mottagaren ser inte vilket konto som skickade dem.</p>
+                <button type="button" class="text-button" disabled="@busy" @onclick="() => SendGift(actionId)">@(busy ? "Skickar…" : "Ja, skicka poäng")</button>
+                <button type="button" class="text-button" disabled="@busy" @onclick="() => giftConfirming = false">Ändra antal</button>
+                <button type="button" class="text-button" disabled="@busy" @onclick="CloseGift">Avbryt</button>
+            </div>
+            return;
+        }
+        <EditForm Model="giftDraft" OnValidSubmit="ReviewGift" FormName="@formId" class="flag-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label for="@($"{formId}-amount")">Antal poäng att skicka (1–@PointsSettings.MaxGiftPerTransfer)</label>
+            <InputNumber id="@($"{formId}-amount")" @bind-Value="giftDraft.Amount" min="1" max="@PointsSettings.MaxGiftPerTransfer" />
+            <p class="small">Poängen flyttas från ditt eget saldo; inga nya poäng skapas. Högst @PointsText.Points(PointsSettings.MaxGiftPerDay) per dygn. @PointsText.SafetyNote</p>
+            <button type="submit" class="text-button" disabled="@busy">Fortsätt</button>
+            <button type="button" class="text-button" disabled="@busy" @onclick="CloseGift">Avbryt</button>
+        </EditForm>
+    };
+
+    private void OpenGift(Guid actionId)
+    {
+        giftTarget = actionId;
+        giftConfirming = false;
+        giftDraft = new();
+        status = null;
+        error = null;
+    }
+
+    private void CloseGift()
+    {
+        giftTarget = null;
+        giftConfirming = false;
+    }
+
+    private void ReviewGift()
+    {
+        error = null;
+        try
+        {
+            giftDraft.Validated(PointsSettings);
+            giftConfirming = true;
+        }
+        catch (ValidationException exception) { error = exception.Message; }
+    }
+
+    private async Task SendGift(Guid actionId)
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var amount = giftDraft.Amount;
+            var result = await PointsCommands.GiftAsync((await AuthenticationStateTask).User, ReportId, actionId, giftDraft);
+            CloseGift();
+            await Reload();
+            status = PointsText.Gift(result, amount);
+        }
+        catch (ValidationException exception)
+        {
+            error = exception.Message;
+            giftConfirming = false;
+        }
+        catch (UnauthorizedAccessException) { error = "Ett behörigt konto krävs för att skicka poäng."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Poängen kunde inte skickas.");
+            error = "Poängen kunde inte skickas. Försök igen senare.";
         }
         finally { busy = false; }
     }

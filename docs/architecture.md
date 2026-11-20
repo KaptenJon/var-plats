@@ -87,6 +87,20 @@ Tillståndet ligger i `report_archives` och historiken i `report_archive_events`
 så den publika rapporttabellen ändras inte. Läsningar för karta, lista, API och
 närliggande tips utesluter arkiverade rapporter bara när inställningen är på.
 
+Poäng är en separat avstängd skiva med egen migration (`Points`) och egen
+inställning, `Reporting:PointsEnabled`, som kräver arbetsflödet. Belopp och
+gränser ligger under `Points:` och valideras vid start. Grundpoäng skrivs av
+`DatabaseReportActionStore.ConfirmAsync` i samma transaktion som en bekräftelse
+från ett annat konto, en gång per åtgärd. `points_events` är en händelsebok där
+saldot är en summa och återtagningar är motrader (`PointsLedger`);
+`IPointsStore` exponerar återtagningskrokar som återtagande av bekräftelser,
+arkivering eller administratörsbeslut kan anropa. Administratörens borttagning
+av en åtgärd eller rapport tar tillbaka poäng i samma transaktion. Hjärtan
+(`action_hearts`) ger inga poäng. Gåvor flyttar poäng mellan konton som två rader
+med samma överförings-id. Rapportsidan visar hjärtan och poäng per åtgärd, och
+`/mina-poang` visar kontots eget saldo och historik. Det finns ingen topplista.
+När inställningen är av nämner ingen fråga de nya tabellerna.
+
 Den separat avstängda bildskivan tar emot högst en bild samtidigt med ett nytt
 inskick eller en ny åtgärd. Skanning och metadatafri omkodning sker innan
 texten sparas; filen placeras atomärt och bildmetadata och förälder sparas i
@@ -111,7 +125,9 @@ körs inte i förhandsversionen och kräver separat säkerhets- och driftsgransk
    rapporter; bevis, missbruksflöde och en säker lansering återstår.
 4. **Bekräftelser:** grundskivan tillåter ett annat konto och förbjuder
    självbekräftelse; skydd mot manipulation, återtagande och tvister återstår.
-5. **Poäng:** spårbar regelversion och händelsebok från godkända bekräftelser.
+5. **Poäng:** den avstängda grundskivan (`Reporting:PointsEnabled`) har spårbar
+   regelversion, händelsebok från bekräftelser, hjärtan och poänggåvor;
+   spärrar, bedrägeribedömning och administratörsåterkallelse återstår.
    Ingen belöning för riskfyllda insatser, dubbla konton eller rent antal klick.
 6. **Organisationer:** verifierade organisationer, geografiska områden och
    behörighetsstyrd bevakning/notifiering; inte automatisk officiell felanmälan.

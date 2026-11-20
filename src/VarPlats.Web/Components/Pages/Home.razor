@@ -84,6 +84,7 @@ FORM: Orienteringskontrollens fältblad, riktning 4; d33d31b5. Ingen påhittad e
             {
                 <nav aria-label="Rapporthantering">
                     @if (canCheckOwn) { <a href="/mina-rapporter">Mina rapporter</a> }
+                    @if (canCheckOwn && Mode.Points) { <span> · </span><a href="/mina-poang">Mina poäng</a> }
                     @if (canReview) { <span> · </span><a href="/moderering">Granskningskö</a> }
                 </nav>
             }

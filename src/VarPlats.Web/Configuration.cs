@@ -5,7 +5,7 @@ namespace VarPlats.Web;
 
 public sealed record ReportingMode(
     bool Demo, bool LocalWrites, bool PublicWrites, bool WorkflowEnabled = false, bool FlagsEnabled = false,
-    bool ArchiveEnabled = false)
+    bool ArchiveEnabled = false, bool PointsEnabled = false)
 {
     public bool PublicWorkflow => PublicWrites && WorkflowEnabled && !Demo && !LocalWrites;
     public bool CanWrite => Demo || LocalWrites || PublicWorkflow;
@@ -17,6 +17,10 @@ public sealed record ReportingMode(
     public bool Archive => ArchiveEnabled && WorkflowEnabled && !Demo && !LocalWrites;
     /// <summary>Admins can archive and restore reports.</summary>
     public bool CanArchive => Archive && PublicWorkflow;
+    /// <summary>Points, hearts and gifts are read and confirmations award points; requires the Points migration.</summary>
+    public bool Points => PointsEnabled && WorkflowEnabled && !Demo && !LocalWrites;
+    /// <summary>Accounts can give hearts and gifts, and confirmations write to the ledger.</summary>
+    public bool CanUsePoints => Points && PublicWorkflow;
 }
 
 public sealed class MapOptions

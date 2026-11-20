@@ -90,6 +90,32 @@ public sealed class ReportArchiveEventEntity
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>
+/// Append-only points ledger. Rows are never updated; a reversal is a new row pointing at the row it takes back.
+/// ActionId deliberately has no foreign key so the history survives removal of the action.
+/// </summary>
+public sealed class PointsEventEntity
+{
+    public Guid Id { get; set; }
+    public Guid AccountId { get; set; }
+    public int Amount { get; set; }
+    public PointsReason Reason { get; set; }
+    public Guid? ActionId { get; set; }
+    public Guid? ConfirmerId { get; set; }
+    public Guid? TransferId { get; set; }
+    public Guid? ReversesEventId { get; set; }
+    public PointsReversalCause? ReversalCause { get; set; }
+    public required string RuleVersion { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class ActionHeartEntity
+{
+    public Guid ActionId { get; set; }
+    public Guid AccountId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public sealed class IdentityAccountActivity
 {
     public Guid UserId { get; set; }
@@ -118,6 +144,8 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
     public DbSet<ContentFlagEntity> ContentFlags => Set<ContentFlagEntity>();
     public DbSet<ReportArchiveEntity> ReportArchives => Set<ReportArchiveEntity>();
     public DbSet<ReportArchiveEventEntity> ReportArchiveEvents => Set<ReportArchiveEventEntity>();
+    public DbSet<PointsEventEntity> PointsEvents => Set<PointsEventEntity>();
+    public DbSet<ActionHeartEntity> ActionHearts => Set<ActionHeartEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -301,6 +329,65 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
                 .OnDelete(DeleteBehavior.Cascade)
                 .IsRequired();
         });
+        modelBuilder.Entity<PointsEventEntity>(entity =>
+        {
+            entity.ToTable("points_events", table =>
+            {
+                table.HasCheckConstraint("CK_points_events_Shape",
+                    "(\"Reason\" = 0 AND \"Amount\" > 0 AND \"ActionId\" IS NOT NULL AND \"TransferId\" IS NULL"
+                    + " AND \"ReversesEventId\" IS NULL AND \"ReversalCause\" IS NULL)"
+                    + " OR (\"Reason\" = 1 AND \"Amount\" <> 0 AND \"TransferId\" IS NULL AND \"ConfirmerId\" IS NULL"
+                    + " AND \"ReversesEventId\" IS NOT NULL AND \"ReversalCause\" BETWEEN 0 AND 4)"
+                    + " OR (\"Reason\" = 2 AND \"Amount\" < 0 AND \"ActionId\" IS NOT NULL AND \"TransferId\" IS NOT NULL"
+                    + " AND \"ConfirmerId\" IS NULL AND \"ReversesEventId\" IS NULL AND \"ReversalCause\" IS NULL)"
+                    + " OR (\"Reason\" = 3 AND \"Amount\" > 0 AND \"ActionId\" IS NOT NULL AND \"TransferId\" IS NOT NULL"
+                    + " AND \"ConfirmerId\" IS NULL AND \"ReversesEventId\" IS NULL AND \"ReversalCause\" IS NULL)");
+                table.HasCheckConstraint("CK_points_events_RuleVersion",
+                    "length(trim(\"RuleVersion\")) BETWEEN 1 AND 32");
+            });
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.RuleVersion).HasMaxLength(PointsOptions.RuleVersionMaxLength);
+            entity.HasIndex(item => new { item.AccountId, item.CreatedAt });
+            entity.HasIndex(item => new { item.ActionId, item.Reason });
+            // One award per action and confirming account, so withdrawing and re-confirming cannot earn twice.
+            entity.HasIndex(item => new { item.ActionId, item.ConfirmerId })
+                .IsUnique()
+                .HasFilter("\"Reason\" = 0");
+            // A row can be reversed at most once; a gift has exactly one sent and one received row.
+            entity.HasIndex(item => item.ReversesEventId).IsUnique();
+            entity.HasIndex(item => new { item.TransferId, item.Reason })
+                .IsUnique()
+                .HasFilter("\"TransferId\" IS NOT NULL");
+            entity.HasOne<IdentityUser<Guid>>()
+                .WithMany()
+                .HasForeignKey(item => item.AccountId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+            entity.HasOne<IdentityUser<Guid>>()
+                .WithMany()
+                .HasForeignKey(item => item.ConfirmerId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<PointsEventEntity>()
+                .WithOne()
+                .HasForeignKey<PointsEventEntity>(item => item.ReversesEventId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ActionHeartEntity>(entity =>
+        {
+            entity.ToTable("action_hearts");
+            entity.HasKey(heart => new { heart.ActionId, heart.AccountId });
+            entity.HasIndex(heart => heart.AccountId);
+            entity.HasOne<ReportActionEntity>()
+                .WithMany()
+                .HasForeignKey(heart => heart.ActionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+            entity.HasOne<IdentityUser<Guid>>()
+                .WithMany()
+                .HasForeignKey(heart => heart.AccountId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+        });
         modelBuilder.Entity<IdentityAccountActivity>(entity =>
         {
             entity.ToTable("IdentityAccountActivity");
@@ -319,7 +406,7 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
 }
 
 public sealed class DatabaseReportStore(
-    IDbContextFactory<ReportDbContext> factory, ReportingMode mode) : IReportStore
+    IDbContextFactory<ReportDbContext> factory, ReportingMode mode, PointsOptions? points = null) : IReportStore
 {
     public async Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default)
     {
@@ -435,9 +522,21 @@ public sealed class DatabaseReportStore(
     {
         if (!mode.CanWrite)
             throw new InvalidOperationException("Publika skrivningar är inte aktiverade.");
+        var pointsOptions = mode.Points
+            ? points ?? throw new InvalidOperationException("Poänginställningar saknas.")
+            : null;
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        return await db.Reports.Where(report => report.Id == id)
+        if (pointsOptions is null)
+            return await db.Reports.Where(report => report.Id == id)
+                .ExecuteDeleteAsync(cancellationToken) > 0;
+
+        // Removing a report cascades to its actions, so their awards are taken back first in the same transaction.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await PointsLedger.ReverseReportAsync(db, id, pointsOptions, cancellationToken);
+        var removed = await db.Reports.Where(report => report.Id == id)
             .ExecuteDeleteAsync(cancellationToken) > 0;
+        await transaction.CommitAsync(cancellationToken);
+        return removed;
     }
 
     private async Task<IReadOnlyList<Report>> ReadAsync(

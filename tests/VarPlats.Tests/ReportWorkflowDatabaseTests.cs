@@ -186,6 +186,8 @@ public sealed class ReportWorkflowDatabaseTests
             firstMember, secondMember, admin, firstUser.Id, secondUser.Id);
         await db.GetService<IMigrator>().MigrateAsync("20261119222822_ReportArchive");
         await CheckReportArchiveAsync(contexts, approved, firstMember, admin);
+        await db.GetService<IMigrator>().MigrateAsync("20261120090000_Points");
+        await PointsDatabaseScenario.RunAsync(contexts, userManager);
 
         await DeleteAccountViaEndpoint(connectionString, firstUser.Id, legacy.Id);
         await using (var check = contexts.CreateDbContext())
