@@ -217,6 +217,12 @@ done
 ! grep -Eiq '^[[:space:]]*(INSERT|UPDATE|DELETE|GRANT|CREATE|ALTER|DROP)[[:space:]]' "$TEST_SQL" || exit 1
 grep -Fq 'varplats_photos:/photos' "$TEST_LOG"
 grep -Fq -- '--profile photos up -d --no-build --wait --wait-timeout 900 clamav' "$TEST_LOG"
+# Signaturvolymen byter ägare i clamav-tjänsten själv (efter Dockers kopiering från imagen),
+# inte via webbimagen, och före start av clamd.
+! grep -Fq 'varplats_clamav-signatures:/signatures' "$TEST_LOG" || exit 1
+grep -Fq -- '--entrypoint chown clamav -R 1654:1654 /var/lib/clamav' "$TEST_LOG"
+chown_line=$(grep -n -- '--entrypoint chown clamav' "$TEST_LOG" | cut -d: -f1)
+((chown_line < $(grep -n -- '--profile photos up' "$TEST_LOG" | cut -d: -f1)))
 # Förkontroll och skanner kommer före bytet av webbcontainer.
 preflight_line=$(grep -n 'exec -T db psql' "$TEST_LOG" | cut -d: -f1)
 clamav_line=$(grep -n -- '--profile photos up' "$TEST_LOG" | cut -d: -f1)
