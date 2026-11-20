@@ -9,12 +9,27 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ${WEB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-deploy-web@sha256:[a-f0-9]{64}$ ]]
 [[ ${DB_IMAGE:-} =~ ^ghcr\.io/kaptenjon/var-plats-postgis@sha256:[a-f0-9]{64}$ ]]
 for flag in AUTHENTICATION_ENABLED REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_WRITES \
-    REPORTING_FLAGS_ENABLED REPORTING_ARCHIVE_ENABLED REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED \n    RATE_LIMITS_ENABLED PHOTOS_ENABLED; do
+    REPORTING_FLAGS_ENABLED REPORTING_ARCHIVE_ENABLED REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED \
+    REPORTING_POINTS_ENABLED RATE_LIMITS_ENABLED PHOTOS_ENABLED; do
     [[ ${!flag:-false} =~ ^(true|false)$ ]] || {
         echo "$flag måste vara true eller false." >&2
         exit 1
     }
 done
+for setting in POINTS_CONFIRMED_ACTION_POINTS POINTS_MAX_GIFT_PER_TRANSFER POINTS_MAX_GIFT_PER_DAY; do
+    [[ -z ${!setting:-} || ${!setting} =~ ^[1-9][0-9]{0,4}$ ]] || {
+        echo "$setting måste vara ett positivt heltal." >&2
+        exit 1
+    }
+done
+[[ -z ${POINTS_RULE_VERSION:-} || $POINTS_RULE_VERSION =~ ^[A-Za-z0-9._-]{1,32}$ ]] || {
+    echo "POINTS_RULE_VERSION måste vara 1–32 tecken (bokstäver, siffror, . _ -)." >&2
+    exit 1
+}
+[[ ${POINTS_GIFTS_ENABLED:-true} =~ ^(true|false)$ ]] || {
+    echo "POINTS_GIFTS_ENABLED måste vara true eller false." >&2
+    exit 1
+}
 mkdir -p "$root/state"
 exec 9>"$root/state/deployment.lock"
 flock -n 9
@@ -97,6 +112,11 @@ if [[ ${REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED:-false} == true ]]; then
     required_migrations+=(20261120080000_ConfirmationWithdrawals)
     required_grants+=(report_action_confirmations:DELETE
         report_action_confirmation_withdrawals:SELECT report_action_confirmation_withdrawals:INSERT)
+fi
+if [[ ${REPORTING_POINTS_ENABLED:-false} == true ]]; then
+    required_migrations+=(20261120090000_Points)
+    required_grants+=(points_events:SELECT points_events:INSERT
+        action_hearts:SELECT action_hearts:INSERT action_hearts:DELETE)
 fi
 if ((${#required_migrations[@]} + ${#required_grants[@]} > 0)); then
     sql_list() { local IFS=,; printf '%s' "$*"; }

@@ -73,6 +73,14 @@ jobs:
           REPORTING_FLAGS_ENABLED: "true"
           REPORTING_ARCHIVE_ENABLED: "true"
           REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED: "true"
+          REPORTING_POINTS_ENABLED: "true"
+          # Poängvärden: kodens standardvärden, uttryckligen satta. Ägaren har inte
+          # beslutat egna belopp eller gränser; ändra här (och RuleVersion) vid beslut.
+          POINTS_CONFIRMED_ACTION_POINTS: "10"
+          POINTS_MAX_GIFT_PER_TRANSFER: "10"
+          POINTS_MAX_GIFT_PER_DAY: "30"
+          POINTS_RULE_VERSION: poang-v1
+          POINTS_GIFTS_ENABLED: "true"
           RATE_LIMITS_ENABLED: "true"
           PHOTOS_ENABLED: "true"
           ADMIN_GITHUB_ID: "10761546"

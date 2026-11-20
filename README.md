@@ -50,7 +50,7 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 | Kod för att anmäla rapporter och åtgärdstexter till administratörer, avstängd bakom `Reporting:FlagsEnabled` | Överklaganden och skydd mot falska anmälningar |
 | Kod för att arkivera och återställa rapporter, avstängd bakom `Reporting:ArchiveEnabled` | Sammanslagning av dubbletter |
 | Skrivgränser per konto och gräns för läs-API:t, avstängda bakom `Reporting:RateLimits:Enabled` | Delade gränser mellan flera instanser och skydd mot många konton (Sybil) |
-| Kod för poäng vid bekräftade åtgärder, hjärtan och poänggåvor, avstängd bakom `Reporting:PointsEnabled` | Bedrägeribedömning, spärrar och administratörsåterkallelse av poäng |
+| Kod för poäng vid bekräftade åtgärder, hjärtan och poänggåvor, avstängd bakom `Reporting:PointsEnabled` men påslagen i Pi-releasen | Bedrägeribedömning, spärrar och administratörsåterkallelse av poäng |
 | EF Core/PostGIS-lagring i lokalt utvecklingsläge | Organisationsbevakning |
 | Läs-API med kartvyfilter, livs-/beredskapskontroller, OTLP vid konfiguration | Betalning, native-app och offlinekartor |
 | Installerbart webb/PWA-skal; kräver nätanslutning | |
@@ -76,7 +76,9 @@ läsas utan det nya schemat. Demo eller lokala skrivningar i Production stoppar 
 **Ägarbeslut 2026-11-20:** den taggade Pi-releasen slår på alla brytare som finns
 på `main` – granskning, publika skrivningar, åtgärder och bekräftelser, återtagande
 av bekräftelser (`Reporting:ConfirmationWithdrawalEnabled`), anmälningar,
-arkivering, skrivgränser och bilder. `deploy/compose.yml` och `.env.example`
+arkivering, poäng, hjärtan och gåvor (`Reporting:PointsEnabled`), skrivgränser och bilder.
+Poängen använder kodens standardvärden (10 per bekräftad åtgärd, högst 10 per
+gåva och 30 per dygn); ägaren har inte beslutat egna belopp eller gränser. `deploy/compose.yml` och `.env.example`
 behåller `false`, så en vanlig Compose-körning är fortfarande skrivskyddad.
 Migreringarna tillämpas aldrig automatiskt: ägaren tar backup och kör
 `deploy/pi-workflow-migrations.sql` och de begränsade grantfilerna manuellt, och
@@ -165,5 +167,6 @@ leverantörens villkor, integritet och attribution innan byte.
 
 Licens- och källkodsinventering för containerdistribution, logg- och
 backuprotation på värden, Pi-modell/RAM/64-bitars OS, modereringsansvar, säker
-drift av bildhantering, poängregler och tile-kapacitet. Ingen betaltjänst har
+drift av bildhantering, poängregler (belopp och gränser; releasen använder
+kodens standardvärden) och tile-kapacitet. Ingen betaltjänst har
 aktiverats.

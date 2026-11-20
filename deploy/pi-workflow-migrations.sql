@@ -380,3 +380,102 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE TABLE action_hearts (
+        "ActionId" uuid NOT NULL,
+        "AccountId" uuid NOT NULL,
+        "CreatedAt" timestamp with time zone NOT NULL,
+        CONSTRAINT "PK_action_hearts" PRIMARY KEY ("ActionId", "AccountId"),
+        CONSTRAINT "FK_action_hearts_AspNetUsers_AccountId" FOREIGN KEY ("AccountId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+        CONSTRAINT "FK_action_hearts_report_actions_ActionId" FOREIGN KEY ("ActionId") REFERENCES report_actions ("Id") ON DELETE CASCADE
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE TABLE points_events (
+        "Id" uuid NOT NULL,
+        "AccountId" uuid NOT NULL,
+        "Amount" integer NOT NULL,
+        "Reason" integer NOT NULL,
+        "ActionId" uuid,
+        "ConfirmerId" uuid,
+        "TransferId" uuid,
+        "ReversesEventId" uuid,
+        "ReversalCause" integer,
+        "RuleVersion" character varying(32) NOT NULL,
+        "CreatedAt" timestamp with time zone NOT NULL,
+        CONSTRAINT "PK_points_events" PRIMARY KEY ("Id"),
+        CONSTRAINT "CK_points_events_RuleVersion" CHECK (length(trim("RuleVersion")) BETWEEN 1 AND 32),
+        CONSTRAINT "CK_points_events_Shape" CHECK (("Reason" = 0 AND "Amount" > 0 AND "ActionId" IS NOT NULL AND "TransferId" IS NULL AND "ReversesEventId" IS NULL AND "ReversalCause" IS NULL) OR ("Reason" = 1 AND "Amount" <> 0 AND "TransferId" IS NULL AND "ConfirmerId" IS NULL AND "ReversesEventId" IS NOT NULL AND "ReversalCause" BETWEEN 0 AND 4) OR ("Reason" = 2 AND "Amount" < 0 AND "ActionId" IS NOT NULL AND "TransferId" IS NOT NULL AND "ConfirmerId" IS NULL AND "ReversesEventId" IS NULL AND "ReversalCause" IS NULL) OR ("Reason" = 3 AND "Amount" > 0 AND "ActionId" IS NOT NULL AND "TransferId" IS NOT NULL AND "ConfirmerId" IS NULL AND "ReversesEventId" IS NULL AND "ReversalCause" IS NULL)),
+        CONSTRAINT "FK_points_events_AspNetUsers_AccountId" FOREIGN KEY ("AccountId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+        CONSTRAINT "FK_points_events_AspNetUsers_ConfirmerId" FOREIGN KEY ("ConfirmerId") REFERENCES "AspNetUsers" ("Id") ON DELETE SET NULL,
+        CONSTRAINT "FK_points_events_points_events_ReversesEventId" FOREIGN KEY ("ReversesEventId") REFERENCES points_events ("Id") ON DELETE CASCADE
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE INDEX "IX_action_hearts_AccountId" ON action_hearts ("AccountId");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE INDEX "IX_points_events_AccountId_CreatedAt" ON points_events ("AccountId", "CreatedAt");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE UNIQUE INDEX "IX_points_events_ActionId_ConfirmerId" ON points_events ("ActionId", "ConfirmerId") WHERE "Reason" = 0;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE INDEX "IX_points_events_ActionId_Reason" ON points_events ("ActionId", "Reason");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE INDEX "IX_points_events_ConfirmerId" ON points_events ("ConfirmerId");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE UNIQUE INDEX "IX_points_events_ReversesEventId" ON points_events ("ReversesEventId");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    CREATE UNIQUE INDEX "IX_points_events_TransferId_Reason" ON points_events ("TransferId", "Reason") WHERE "TransferId" IS NOT NULL;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261120090000_Points') THEN
+    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+    VALUES ('20261120090000_Points', '11.0.0-rc.3.26522.148');
+    END IF;
+END $EF$;
+COMMIT;
+

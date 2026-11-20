@@ -9,8 +9,8 @@ Använd aldrig verkliga personuppgifter i demo eller test. Den ägargodkända
 Ägaren beslutade 2026-11-20 att release-workflowen ska slå på alla brytare som
 finns på `main`: `Reporting:WorkflowEnabled`, `Reporting:PublicWrites`,
 `Reporting:FlagsEnabled`, `Reporting:ArchiveEnabled`,
-`Reporting:ConfirmationWithdrawalEnabled`, `Reporting:RateLimits:Enabled` och
-`Photos:Enabled`. Det är det ägarbeslut som
+`Reporting:ConfirmationWithdrawalEnabled`, `Reporting:PointsEnabled`,
+`Reporting:RateLimits:Enabled` och `Photos:Enabled`. Det är det ägarbeslut som
 punkterna nedan kräver före aktivering. Standardvärdena i koden, `compose.yml`
 och `.env.example` är fortfarande `false`, och startkontrollerna i `Program.cs`
 är oförändrade. Migreringar och grants tillämpas inte automatiskt; ägaren kör dem
@@ -22,13 +22,17 @@ gäller det tiden före detta beslut och fortfarande standardkonfigurationen.
 Beslutet gör **inte** lanseringsgrinden nedan uppfylld. Öppna punkter som koden
 inte löser:
 
-- [ ] integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor, arkiv
-      och historik över återtagna bekräftelser;
+- [ ] integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor, arkiv,
+      historik över återtagna bekräftelser och poänghändelser;
 - [ ] uppdaterade och godkända villkor och integritetsinformation för dessa flöden;
 - [ ] bemannad granskningskö, även för direktpublicerade åtgärder och anmälningar;
 - [ ] provad backup och återställning av databas och bildvolym tillsammans;
 - [ ] provad clamd på Pi:n (ARM64): start, signaturer, minne och svar;
-- [ ] lastprov på Pi:n med alla brytare på.
+- [ ] lastprov på Pi:n med alla brytare på;
+- [ ] ägarbeslut om poängbelopp och gränser. Releasen sätter kodens standardvärden
+      uttryckligen (10 per bekräftad åtgärd, högst 10 per gåva och 30 per dygn,
+      regelversion `poang-v1`); ägaren har inte beslutat andra värden.
+      Spärrar, bedrägeribedömning och administratörsåterkallelse av poäng saknas.
 
 Adminborttagning är fortfarande permanent utan granskningshistorik, spam-/Sybil-
 skydd över många konton saknas och API-gränsen blir en gemensam gräns bakom Caddy.
@@ -178,7 +182,11 @@ lansering. Ingen utlovad svarstid eller bug bounty finns.
   `varplats_reader` endast de rättigheter koden använder per tabell (ingen
   UPDATE/DELETE på bilder eller arkivhändelser, ingen UPDATE på bekräftelser och
   bara SELECT/INSERT på historiken över återtagna bekräftelser; DELETE på
-  bekräftelser ges för återtagandet).
+  bekräftelser ges för återtagandet). Poänghändelseboken `points_events` får
+  bara SELECT/INSERT: återtagningar är motrader, och kontoborttagning raderar
+  kontots rader och nollställer bekräftaren via främmande nycklar som körs som
+  tabellägaren. `action_hearts` får SELECT/INSERT/DELETE eftersom ett hjärta
+  kan tas bort.
 - Lokal skrivning kräver Development och loopback. Aldrig en publik dev-proxy.
 - Gemensam servervalidering, EF-parametrisering, textkodade Leaflet-popupfält
   och Blazors normala HTML-kodning. Inget användarinnehåll går till `MarkupString`.

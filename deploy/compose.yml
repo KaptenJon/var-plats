@@ -39,6 +39,13 @@ services:
       Reporting__FlagsEnabled: ${REPORTING_FLAGS_ENABLED:-false}
       Reporting__ArchiveEnabled: ${REPORTING_ARCHIVE_ENABLED:-false}
       Reporting__ConfirmationWithdrawalEnabled: ${REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED:-false}
+      Reporting__PointsEnabled: ${REPORTING_POINTS_ENABLED:-false}
+      # Samma standardvärden som appsettings.json; används bara när poäng är påslagna.
+      Points__ConfirmedActionPoints: ${POINTS_CONFIRMED_ACTION_POINTS:-10}
+      Points__MaxGiftPerTransfer: ${POINTS_MAX_GIFT_PER_TRANSFER:-10}
+      Points__MaxGiftPerDay: ${POINTS_MAX_GIFT_PER_DAY:-30}
+      Points__RuleVersion: ${POINTS_RULE_VERSION:-poang-v1}
+      Points__GiftsEnabled: ${POINTS_GIFTS_ENABLED:-true}
       Reporting__RateLimits__Enabled: ${RATE_LIMITS_ENABLED:-false}
       Photos__Enabled: ${PHOTOS_ENABLED:-false}
       Photos__StoragePath: /var/lib/varplats/photos

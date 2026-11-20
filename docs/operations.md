@@ -171,7 +171,8 @@ kontot har tillgång till och måste roteras före utgång. Begränsa därför r
 och värdåtkomst. Den godkända release-workflowen aktiverar autentisering och,
 efter ägarbeslutet 2026-11-20, `REPORTING_WORKFLOW_ENABLED`,
 `REPORTING_PUBLIC_WRITES`, `REPORTING_FLAGS_ENABLED`, `REPORTING_ARCHIVE_ENABLED`,
-`REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED`, `RATE_LIMITS_ENABLED` och `PHOTOS_ENABLED`. Värdena skickas till containern vid
+`REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED`, `REPORTING_POINTS_ENABLED` (med
+`POINTS_*`-värdena), `RATE_LIMITS_ENABLED` och `PHOTOS_ENABLED`. Värdena skickas till containern vid
 varje deploy och skrivs inte till `.env`; en manuell `docker compose up` utan dem
 startar alltså webben skrivskyddad. Den läser Caddys exakta IPv4-gateway
 från det befintliga Vår plats-webbcontainerns nätverk; den gissar inte proxy-IP.
@@ -322,9 +323,19 @@ databasstegen nedan.
 `main`: `Reporting:WorkflowEnabled`, `Reporting:PublicWrites`,
 `Reporting:FlagsEnabled`, `Reporting:ArchiveEnabled`,
 `Reporting:ConfirmationWithdrawalEnabled` (tillagd efter att #36 mergats),
+`Reporting:PointsEnabled` (tillagd efter att #37 mergats),
 `Reporting:RateLimits:Enabled` och `Photos:Enabled` (utöver den redan påslagna
-autentiseringen). Brytare som ännu inte finns på `main` ingår inte.
-Startkontrollerna i `Program.cs` är oförändrade.
+autentiseringen). Startkontrollerna i `Program.cs` är oförändrade.
+
+Poängvärdena i releasen är kodens standardvärden, nu uttryckligen satta i
+`release.yml`: 10 poäng per bekräftad åtgärd (`POINTS_CONFIRMED_ACTION_POINTS`),
+högst 10 poäng per gåva (`POINTS_MAX_GIFT_PER_TRANSFER`), högst 30 poäng i gåvor
+per konto och dygn (`POINTS_MAX_GIFT_PER_DAY`), regelversion `poang-v1`
+(`POINTS_RULE_VERSION`) och gåvor påslagna (`POINTS_GIFTS_ENABLED`). Ägaren har
+beslutat att poäng ska vara på men **har inte fattat ett eget beslut om belopp
+och gränser**; de är en öppen punkt. Ändra värdena i `release.yml` före taggen om
+ägaren vill annat, och höj då `POINTS_RULE_VERSION` så att nya rader går att
+skilja från gamla. `deploy-release.sh` avvisar ogiltiga värden innan något ändras.
 
 EF-migreringar tillämpas **aldrig** automatiskt, varken vid uppstart eller av
 release-workflowen. `deploy-release.sh` kontrollerar i stället skrivskyddat
@@ -338,7 +349,7 @@ Filerna i ordning, alla granskade i samma PR som brytarna:
 
 | Fil | Innehåll |
 |---|---|
-| `deploy/pi-workflow-migrations.sql` | Idempotent `dotnet ef migrations script --idempotent` från `20261108035738_IdentityAccountActivity` (Pi:ns nuvarande nivå via `identity-schema.sql`) till `20261120080000_ConfirmationWithdrawals`: granskning, åtgärder/bekräftelser, bilder (med triggrar), flaggor, arkiv och historik för återtagna bekräftelser. Ett test jämför filen med EF-migreringarna. |
+| `deploy/pi-workflow-migrations.sql` | Idempotent `dotnet ef migrations script --idempotent` från `20261108035738_IdentityAccountActivity` (Pi:ns nuvarande nivå via `identity-schema.sql`) till `20261120090000_Points`: granskning, åtgärder/bekräftelser, bilder (med triggrar), flaggor, arkiv, historik för återtagna bekräftelser samt poänghändelser och hjärtan. Ett test jämför filen med EF-migreringarna. |
 | `deploy/pi-public-write-role.sql` | INSERT/DELETE på `reports` för `varplats_reader`. |
 | `deploy/pi-workflow-grants.sql` | Minsta behörigheter per ny tabell för `varplats_reader` (se kommentarer i filen). Ingen UPDATE eller DELETE där koden inte behöver det; bildmetadata är oföränderlig. |
 
@@ -379,7 +390,7 @@ compose=(docker compose --project-name varplats --env-file deploy/.env
      -c 'SELECT "MigrationId" FROM "__EFMigrationsHistory" ORDER BY 1;'
    ```
 
-   Listan ska sluta med `20261120080000_ConfirmationWithdrawals` (nio rader totalt).
+   Listan ska sluta med `20261120090000_Points` (tio rader totalt).
    Den nuvarande webben fungerar vidare: med brytarna av läses inga nya tabeller.
 3. **Grants.** Kör skrivgranten och sedan arbetsflödesgranten.
 
@@ -402,6 +413,10 @@ compose=(docker compose --project-name varplats --env-file deploy/.env
    - lägg en åtgärd från ett konto och bekräfta den från ett annat; ta tillbaka
      bekräftelsen och kontrollera att samma konto inte kan bekräfta igen; flagga
      åtgärden och avfärda flaggan som admin;
+   - kontrollera att åtgärdens författare fick poäng en gång vid bekräftelsen och
+     att de togs tillbaka när bekräftelsen togs tillbaka; ge och ta bort ett
+     hjärta; skicka en gåva inom gränsen och kontrollera att en för stor gåva
+     nekas; öppna `/mina-poang`;
    - arkivera och återställ rapporten;
    - skicka många inskick i följd och kontrollera att skrivgränsen ger ett
      svenskt meddelande;
@@ -432,7 +447,7 @@ Brytarna är på, men följande är **inte klart** och är fortfarande ägarens 
 innan riktiga användare bjuds in:
 
 - [ ] Integritets- och retentionsbeslut för inskick, åtgärder, bilder, flaggor,
-      arkivhistorik och historik över återtagna bekräftelser, inklusive fritext som kan innehålla personuppgifter.
+      arkivhistorik, historik över återtagna bekräftelser och poänghändelser, inklusive fritext som kan innehålla personuppgifter.
 - [ ] Villkor och integritetsinformation uppdaterade och godkända för rapportering,
       åtgärder, bilder och anmälningar.
 - [ ] Bemannad granskningskö med svarstid, även för direktpublicerade åtgärder och
@@ -442,6 +457,9 @@ innan riktiga användare bjuds in:
 - [ ] Prov av clamd på Pi:n (ARM64): start, signaturuppdatering, minne och svar
       på `zINSTREAM`.
 - [ ] Lastprov på Pi:n med alla brytare på (Blazor-kretsar, RAM, clamd, databas).
+- [ ] Ägarbeslut om poängbelopp och gränser (releasen använder kodens
+      standardvärden), samt spärrar, bedrägeribedömning och ett
+      administratörsgränssnitt för att återkalla poäng.
 
 Kända begränsningar som följer med: API-gränsen för `GET /api/reports` blir en
 gemensam gräns bakom Caddy, skrivgränserna är per process och nollställs vid

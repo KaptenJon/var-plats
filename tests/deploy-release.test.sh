@@ -2,7 +2,9 @@
 set -euo pipefail
 unset AUTHENTICATION_ENABLED PUBLIC_BASE_URL FAIL_HEALTH FAIL_AUTH AUTH_ROUTE_STATUS FAIL_PREVIOUS_IMAGE \
     REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_WRITES REPORTING_FLAGS_ENABLED REPORTING_ARCHIVE_ENABLED \
-    REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED RATE_LIMITS_ENABLED PHOTOS_ENABLED MOCK_PREFLIGHT_MISSING FAIL_PREFLIGHT
+    REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED REPORTING_POINTS_ENABLED RATE_LIMITS_ENABLED PHOTOS_ENABLED \
+    POINTS_CONFIRMED_ACTION_POINTS POINTS_MAX_GIFT_PER_TRANSFER POINTS_MAX_GIFT_PER_DAY POINTS_RULE_VERSION \
+    POINTS_GIFTS_ENABLED MOCK_PREFLIGHT_MISSING FAIL_PREFLIGHT
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
@@ -32,6 +34,9 @@ for expected in \
     'REPORTING_FLAGS_ENABLED: "true"' \
     'REPORTING_ARCHIVE_ENABLED: "true"' \
     'REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED: "true"' \
+    'REPORTING_POINTS_ENABLED: "true"' \
+    'POINTS_CONFIRMED_ACTION_POINTS: "10"' \
+    'POINTS_MAX_GIFT_PER_DAY: "30"' \
     'RATE_LIMITS_ENABLED: "true"' \
     'PHOTOS_ENABLED: "true"' \
     'ADMIN_GITHUB_ID: "10761546"' \
@@ -52,7 +57,8 @@ for manual in pi-public-write-role.sql pi-workflow-migrations.sql pi-workflow-gr
 done
 # En vanlig Compose-körning förblir skrivskyddad.
 for flag in AUTHENTICATION_ENABLED REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_WRITES REPORTING_FLAGS_ENABLED \
-    REPORTING_ARCHIVE_ENABLED REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED RATE_LIMITS_ENABLED PHOTOS_ENABLED; do
+    REPORTING_ARCHIVE_ENABLED REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED REPORTING_POINTS_ENABLED RATE_LIMITS_ENABLED \
+    PHOTOS_ENABLED; do
     grep -Fq "\${$flag:-false}" "$root/deploy/compose.yml"
     grep -Fxq "$flag=false" "$root/deploy/.env.example"
 done
@@ -173,13 +179,20 @@ grep -F "$GITHUB_REF_NAME $WEB_IMAGE" "$fixture/state/current-release"
 
 all_flags=(AUTHENTICATION_ENABLED=true PUBLIC_BASE_URL=https://larbornhome.asuscomm.com:8010
     REPORTING_WORKFLOW_ENABLED=true REPORTING_PUBLIC_WRITES=true REPORTING_FLAGS_ENABLED=true
-    REPORTING_ARCHIVE_ENABLED=true REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED=true RATE_LIMITS_ENABLED=true
-    PHOTOS_ENABLED=true)
+    REPORTING_ARCHIVE_ENABLED=true REPORTING_CONFIRMATION_WITHDRAWAL_ENABLED=true REPORTING_POINTS_ENABLED=true
+    RATE_LIMITS_ENABLED=true PHOTOS_ENABLED=true POINTS_CONFIRMED_ACTION_POINTS=10 POINTS_RULE_VERSION=poang-v1)
 
 reset_fixture
 if env REPORTING_PUBLIC_WRITES=yes bash "$fixture/bin/deploy-release.sh"; then
     echo "An invalid flag value was not rejected" >&2; exit 1
 fi
+[[ ! -s "$TEST_LOG" ]]
+for invalid in POINTS_MAX_GIFT_PER_DAY=0 POINTS_CONFIRMED_ACTION_POINTS=abc 'POINTS_RULE_VERSION=a b' \
+    POINTS_GIFTS_ENABLED=ja; do
+    if env "$invalid" bash "$fixture/bin/deploy-release.sh" 2> /dev/null; then
+        echo "An invalid points setting was not rejected: $invalid" >&2; exit 1
+    fi
+done
 [[ ! -s "$TEST_LOG" ]]
 
 reset_fixture
@@ -188,13 +201,18 @@ grep -F "$GITHUB_REF_NAME $WEB_IMAGE" "$fixture/state/current-release"
 grep -Fq 'BEGIN READ ONLY;' "$TEST_SQL"
 for migration in 20261108154722_ReportReviewWorkflow 20261108162158_ReportActionsAndConfirmations \
     20261108164953_ReportPhotos 20261119061342_ContentFlags 20261119222822_ReportArchive \
-    20261120080000_ConfirmationWithdrawals; do
+    20261120080000_ConfirmationWithdrawals 20261120090000_Points; do
     grep -Fq "('$migration')" "$TEST_SQL"
 done
 for grant in "('reports','INSERT')" "('report_submissions','UPDATE')" "('report_photos','INSERT')" \
     "('content_flags','UPDATE')" "('report_archives','DELETE')" "('report_archive_events','INSERT')" \
-    "('report_action_confirmations','DELETE')" "('report_action_confirmation_withdrawals','INSERT')"; do
+    "('report_action_confirmations','DELETE')" "('report_action_confirmation_withdrawals','INSERT')" \
+    "('points_events','INSERT')" "('action_hearts','DELETE')"; do
     grep -Fq "$grant" "$TEST_SQL"
+done
+# Händelseboken får aldrig kräva UPDATE eller DELETE.
+for grant in "('points_events','UPDATE')" "('points_events','DELETE')"; do
+    ! grep -Fq "$grant" "$TEST_SQL" || exit 1
 done
 ! grep -Eiq '^[[:space:]]*(INSERT|UPDATE|DELETE|GRANT|CREATE|ALTER|DROP)[[:space:]]' "$TEST_SQL" || exit 1
 grep -Fq 'varplats_photos:/photos' "$TEST_LOG"
