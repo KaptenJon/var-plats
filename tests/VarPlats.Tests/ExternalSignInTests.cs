@@ -36,6 +36,18 @@ public sealed class ExternalSignInTests
         Assert.True(context.Result?.Handled);
     }
 
+    [Fact]
+    public void OnlyControlledMessagesAreLoggedVerbatim()
+    {
+        Assert.Equal("GitHub /user/emails svarade 403.",
+            ExternalSignInFailures.Reason(new ExternalSignInException("email", "GitHub /user/emails svarade 403.")));
+        Assert.Equal("token-anropet till leverantören misslyckades", ExternalSignInFailures.Reason(
+            new InvalidOperationException("OAuth token endpoint failure: Body: {\"login\":\"syntetisk@example.test\"}")));
+        var unknown = ExternalSignInFailures.Reason(new InvalidOperationException("syntetisk@example.test"));
+        Assert.Equal("oväntat fel (InvalidOperationException)", unknown);
+        Assert.DoesNotContain("example.test", unknown, StringComparison.Ordinal);
+    }
+
     private static (DefaultHttpContext Http, RemoteFailureContext Context) CreateFailure(bool signedIn, Exception failure)
     {
         var http = new DefaultHttpContext

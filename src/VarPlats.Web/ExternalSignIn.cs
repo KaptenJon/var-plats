@@ -26,9 +26,7 @@ public static class ExternalSignInFailures
     public static Task HandleAsync(RemoteFailureContext context)
     {
         var code = context.Failure is ExternalSignInException failure ? failure.ErrorCode : External;
-        var reason = context.Failure?.Message ?? "okänd orsak";
-        if (reason.Length > 300)
-            reason = reason[..300];
+        var reason = Reason(context.Failure);
         context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger("ExternalLogin")
             .LogWarning("Extern inloggning via {Scheme} misslyckades ({Code}): {Reason}",
@@ -37,6 +35,21 @@ public static class ExternalSignInFailures
         context.HandleResponse();
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Endast egna, kontrollerade meddelanden loggas ordagrant. Ramverkets och leverantörernas meddelanden
+    /// kan innehålla svarskroppar eller begärandedata, så för dem loggas bara en fast kategori.
+    /// </summary>
+    public static string Reason(Exception? failure) => failure switch
+    {
+        ExternalSignInException own => own.Message,
+        null => "okänd orsak",
+        _ when failure.Message.StartsWith("Correlation failed", StringComparison.Ordinal) => "korrelationskakan saknades eller var ogiltig",
+        _ when failure.Message.StartsWith("The oauth state was missing or invalid", StringComparison.Ordinal) => "OAuth-state saknades eller var ogiltigt",
+        _ when failure.Message.StartsWith("Access was denied", StringComparison.Ordinal) => "åtkomst nekades hos leverantören",
+        _ when failure.Message.StartsWith("OAuth token endpoint failure", StringComparison.Ordinal) => "token-anropet till leverantören misslyckades",
+        _ => $"oväntat fel ({failure.GetType().Name})"
+    };
 
     /// <summary>Inloggade konton länkade en leverantör; övriga försökte logga in.</summary>
     public static string RedirectFor(bool signedIn, string code)
