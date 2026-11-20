@@ -281,8 +281,18 @@ eller Actions-loggar. GitHub behöver `user:email`-scope för att verifiera en
 primär e-postadress; inloggning avvisas om leverantören inte bekräftar e-posten.
 Den verifierade e-postadressen sparas i kontodatabasen men inte i
 autentiseringscookien.
-Endast exakt det konfigurerade GitHub-ID:t får adminrollen; Google-inloggning ger
-inte adminbehörighet. Google- och GitHub-konton länkas endast explicit från en
+Adminrollen ges på två sätt, båda styrda av ägaren:
+
+- exakt det konfigurerade GitHub-ID:t (`Authentication:AdminGitHubId`);
+- ett konto vars **bekräftade** e-postadress står i `Authentication:AdminEmails`
+  (kommaseparerat, oavsett skiftläge). Rollen ges när kontot loggar in, med
+  Google, GitHub, passkey eller verifierad e-post, och gäller direkt. Releasen läser listan från
+  secret `ADMIN_EMAILS` (`gh secret set ADMIN_EMAILS`), så adresserna står aldrig i
+  Git. Obekräftade registreringar räknas inte. Rollen tas inte bort automatiskt om
+  en adress tas bort ur listan; ta i så fall bort raden i `AspNetUserRoles` för hand.
+
+Ingen annan inloggning ger adminbehörighet, och "första kontot" blir aldrig admin
+automatiskt. Google- och GitHub-konton länkas endast explicit från en
 inloggad session; samma e-postadress länkar aldrig automatiskt. Callback-URL:erna är
 `https://larbornhome.asuscomm.com:8010/signin-google` och
 `https://larbornhome.asuscomm.com:8010/signin-github`.

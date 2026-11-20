@@ -40,6 +40,7 @@ for expected in \
     'RATE_LIMITS_ENABLED: "true"' \
     'PHOTOS_ENABLED: "true"' \
     'ADMIN_GITHUB_ID: "10761546"' \
+    'ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}' \
     'install -m 0644 "$GITHUB_WORKSPACE/deploy/compose.yml"' \
     'install -m 0644 "$GITHUB_WORKSPACE/deploy/pi.override.yml"' \
     'install -m 0644 "$GITHUB_WORKSPACE/deploy/clamd.conf"' \
@@ -63,6 +64,10 @@ for flag in AUTHENTICATION_ENABLED REPORTING_WORKFLOW_ENABLED REPORTING_PUBLIC_W
     grep -Fxq "$flag=false" "$root/deploy/.env.example"
 done
 grep -Eq 'clamav-debian:[0-9.]+@sha256:[a-f0-9]{64}' "$root/deploy/compose.yml"
+# Adminadresser kommer bara från en secret, aldrig som e-post i Git.
+grep -Fq 'Authentication__AdminEmails: ${ADMIN_EMAILS:-}' "$root/deploy/compose.yml"
+grep -Fxq 'ADMIN_EMAILS=' "$root/deploy/.env.example"
+! grep -Eq 'ADMIN_EMAILS:.*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]' "$release_workflow" || exit 1
 ! grep -Eq '^(TCPSocket|TCPAddr|User) ' "$root/deploy/clamd.conf" || exit 1
 ! grep -Eiq 'CREATE TABLE "?reports"?|ALTER TABLE "?reports"?' "$root/deploy/identity-schema.sql"
 export TEST_LOG="$fixture/docker.log" TEST_CURL_COUNT="$fixture/curl.count" TEST_GH_LOG="$fixture/gh.log"
