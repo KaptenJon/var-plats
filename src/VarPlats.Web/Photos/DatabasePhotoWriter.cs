@@ -104,7 +104,9 @@ public sealed class DatabasePhotoWriter(
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await LockAsync(db, cancellationToken);
         if (reportId is Guid publishedId
-            && !await db.Reports.AnyAsync(report => report.Id == publishedId, cancellationToken))
+            && (!await db.Reports.AnyAsync(report => report.Id == publishedId, cancellationToken)
+                || (mode.Archive && await db.ReportArchives.AnyAsync(
+                    archive => archive.ReportId == publishedId, cancellationToken))))
             return false;
 
         var entries = await ReconcileAsync(db, cancellationToken);

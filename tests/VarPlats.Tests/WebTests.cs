@@ -138,6 +138,14 @@ public sealed class WebTests
     }
 
     [Fact]
+    public void ArchiveRequiresTheWorkflow()
+    {
+        using var factory = CreateFactory("Production", new() { ["Reporting:ArchiveEnabled"] = "true" });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Reporting:ArchiveEnabled", exception.Message);
+    }
+
+    [Fact]
     public void FlagsRequireTheWorkflow()
     {
         using var factory = CreateFactory("Production", new() { ["Reporting:FlagsEnabled"] = "true" });

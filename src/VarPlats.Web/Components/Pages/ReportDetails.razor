@@ -6,6 +6,7 @@
 @inject IReportStore Store
 @inject ReportActionCommands Actions
 @inject ContentFlagCommands Flags
+@inject ReportArchiveCommands Archives
 @inject ReportingMode Mode
 @inject PhotoOptions PhotoSettings
 @inject PhotoUploadCommands PhotoUploads
@@ -42,16 +43,75 @@
         <h1>@report.Title</h1>
         <p>@CategoryName(report.Category) · @FormatTime(report.CreatedAt) UTC</p>
         <p><strong>Status:</strong> @ReportStatusText.Describe(report.Status, Mode.WorkflowEnabled)</p>
+        @if (archive is not null)
+        {
+            <div class="archive-notice" role="note">
+                <p><strong>Arkiverad rapport</strong> · @ArchiveText.Reason(archive.Reason) · @FormatTime(archive.ArchivedAt) UTC</p>
+                @if (archive.Note is not null)
+                {
+                    <p class="action-description">@archive.Note</p>
+                }
+                <p class="small">Rapporten visas inte längre på kartan eller i listan och tar inte emot nya åtgärdsuppgifter.</p>
+            </div>
+        }
         <p class="action-description">@report.Description</p>
         @if (reportPhotoIds.Contains(report.Id))
         {
             <img class="report-photo" src="@($"/photos/reports/{report.Id}")" alt="Uppladdad bild till rapporten" />
         }
         <p>Latitud: @report.Latitude.ToString("0.######", CultureInfo.InvariantCulture) · Longitud: @report.Longitude.ToString("0.######", CultureInfo.InvariantCulture)</p>
-        <p><a href="@($"/?rapport={report.Id}")">Visa på kartan</a> · länken kan delas och visar bara rapportens plats.</p>
+        @if (archive is null)
+        {
+            <p><a href="@($"/?rapport={report.Id}")">Visa på kartan</a> · länken kan delas och visar bara rapportens plats.</p>
+        }
         @if (canFlag)
         {
             @FlagControls(null, "Anmäl rapporten")
+        }
+        @if (canArchive)
+        {
+            <section class="archive-admin" aria-labelledby="archive-heading">
+                <h2 id="archive-heading">Arkivering</h2>
+                @if (archive is not null)
+                {
+                    <button type="button" class="text-button" disabled="@busy" @onclick="Restore">Återställ rapporten till kartan</button>
+                }
+                else if (!archiveFormOpen)
+                {
+                    <button type="button" class="text-button" disabled="@busy" @onclick="OpenArchive">Arkivera rapporten</button>
+                }
+                else
+                {
+                    <EditForm Model="archiveDraft" OnValidSubmit="Archive" FormName="report-archive" class="flag-form">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+                        <label for="archive-reason">Anledning</label>
+                        <InputSelect id="archive-reason" @bind-Value="archiveDraft.Reason">
+                            @foreach (var reason in Enum.GetValues<ArchiveReason>())
+                            {
+                                <option value="@reason">@ArchiveText.Reason(reason)</option>
+                            }
+                        </InputSelect>
+                        <label for="archive-note">Kommentar @(archiveDraft.Reason == ArchiveReason.Other ? "(krävs för Annat)" : "(frivillig, visas på rapportsidan)")</label>
+                        <InputTextArea id="archive-note" @bind-Value="archiveDraft.Note" maxlength="@ReportArchiveDraft.NoteMaxLength" rows="3" />
+                        <p class="small">Kommentaren är publik. Skriv inga personuppgifter.</p>
+                        <button type="submit" class="text-button" disabled="@busy">@(busy ? "Arkiverar…" : "Arkivera")</button>
+                        <button type="button" class="text-button" disabled="@busy" @onclick="() => archiveFormOpen = false">Avbryt</button>
+                    </EditForm>
+                }
+                @if (archiveHistory.Count > 0)
+                {
+                    <details>
+                        <summary>Arkivhistorik (@archiveHistory.Count)</summary>
+                        <ul>
+                            @foreach (var item in archiveHistory)
+                            {
+                                <li>@FormatTime(item.CreatedAt) UTC · @(item.Kind == ArchiveEventKind.Archived ? $"Arkiverad: {ArchiveText.Reason(item.Reason ?? ArchiveReason.Other)}" : "Återställd")@(item.Note is null ? "" : $" · {item.Note}")</li>
+                            }
+                        </ul>
+                    </details>
+                }
+            </section>
         }
         <p class="small">Vår plats är inte en officiell kommunal felanmälan. Kontakta ansvarig aktör när det behövs.</p>
 
@@ -112,7 +172,11 @@
             }
         </section>
 
-        @if (canWrite)
+        @if (canWrite && archive is not null)
+        {
+            <p>Arkiverade rapporter tar inte emot nya åtgärdsuppgifter.</p>
+        }
+        else if (canWrite)
         {
             <section aria-labelledby="document-action-heading">
                 <h2 id="document-action-heading">Uppge en åtgärd</h2>
@@ -156,7 +220,10 @@
     private IReadOnlySet<Guid> reportPhotoIds = new HashSet<Guid>(), actionPhotoIds = new HashSet<Guid>();
     private Guid? loadedReportId;
     private int photoFieldVersion;
-    private bool canWrite, canRemove, canFlag, loading = true, busy;
+    private bool canWrite, canRemove, canFlag, canArchive, archiveFormOpen, loading = true, busy;
+    private ReportArchive? archive;
+    private ReportArchiveDraft archiveDraft = new();
+    private IReadOnlyList<ReportArchiveEvent> archiveHistory = [];
     // Which item has its flag form open: null = none, Guid.Empty = the report itself, otherwise an action id.
     private Guid? flagTarget;
     private ContentFlagDraft flagDraft = new();
@@ -171,8 +238,10 @@
             photoSelection = new(null, false);
             photoFieldVersion++;
             flagTarget = null;
+            archiveFormOpen = false;
         }
         var user = (await AuthenticationStateTask).User;
+        canArchive = Mode.CanArchive && ReportCommands.CanModerate(user);
         canFlag = Mode.CanFlag && ReportCommands.CanReport(user);
         canWrite = Mode.PublicWorkflow && ReportCommands.CanReport(user);
         canRemove = Mode.PublicWorkflow && ReportCommands.CanModerate(user);
@@ -193,6 +262,10 @@
             reportPhotoIds = report is null ? new HashSet<Guid>()
                 : await Photos.VisibleReportIdsAsync(viewer, [report.Id]);
             actionPhotoIds = await Photos.VisibleActionIdsAsync(actionItems.Select(action => action.Id).ToArray());
+            archive = report is null ? null : await Archives.GetAsync(ReportId);
+            archiveHistory = canArchive && report is not null
+                ? await Archives.HistoryAsync(viewer, ReportId)
+                : [];
         }
         catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
         {
@@ -201,6 +274,8 @@
             actionItems = [];
             reportPhotoIds = new HashSet<Guid>();
             actionPhotoIds = new HashSet<Guid>();
+            archive = null;
+            archiveHistory = [];
             error = "Rapporten kunde inte hämtas. Försök igen senare.";
         }
         finally { loading = false; }
@@ -378,6 +453,62 @@
         {
             Logger.LogError(exception, "Anmälan kunde inte sparas.");
             error = "Anmälan kunde inte skickas. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private void OpenArchive()
+    {
+        archiveDraft = new();
+        archiveFormOpen = true;
+        status = null;
+        error = null;
+    }
+
+    private async Task Archive()
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            var archived = await Archives.ArchiveAsync((await AuthenticationStateTask).User, ReportId, archiveDraft);
+            archiveFormOpen = false;
+            await Reload();
+            status = archived ? "Rapporten är arkiverad och visas inte längre på kartan."
+                : "Rapporten var redan arkiverad eller finns inte längre.";
+        }
+        catch (ValidationException exception) { error = exception.Message; }
+        catch (UnauthorizedAccessException) { error = "Endast administratörer kan arkivera rapporter."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogError(exception, "Rapporten kunde inte arkiveras.");
+            error = "Rapporten kunde inte arkiveras. Försök igen senare.";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Restore()
+    {
+        if (busy) return;
+        busy = true;
+        error = null;
+        status = null;
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("confirm", "Återställ rapporten så att den visas på kartan och i listan igen?"))
+                return;
+            var restored = await Archives.RestoreAsync((await AuthenticationStateTask).User, ReportId);
+            await Reload();
+            status = restored ? "Rapporten är återställd och visas på kartan igen."
+                : "Rapporten var inte arkiverad. Sidan har uppdaterats.";
+        }
+        catch (UnauthorizedAccessException) { error = "Endast administratörer kan återställa rapporter."; }
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException or JSException)
+        {
+            Logger.LogError(exception, "Rapporten kunde inte återställas.");
+            error = "Rapporten kunde inte återställas. Försök igen senare.";
         }
         finally { busy = false; }
     }

@@ -4,7 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace VarPlats.Web;
 
 public sealed record ReportingMode(
-    bool Demo, bool LocalWrites, bool PublicWrites, bool WorkflowEnabled = false, bool FlagsEnabled = false)
+    bool Demo, bool LocalWrites, bool PublicWrites, bool WorkflowEnabled = false, bool FlagsEnabled = false,
+    bool ArchiveEnabled = false)
 {
     public bool PublicWorkflow => PublicWrites && WorkflowEnabled && !Demo && !LocalWrites;
     public bool CanWrite => Demo || LocalWrites || PublicWorkflow;
@@ -12,6 +13,10 @@ public sealed record ReportingMode(
     public bool FlagQueue => FlagsEnabled && WorkflowEnabled && !Demo && !LocalWrites;
     /// <summary>Accounts can flag published content and admins can act on flags.</summary>
     public bool CanFlag => FlagQueue && PublicWorkflow;
+    /// <summary>Reads hide archived reports; requires the ReportArchive migration.</summary>
+    public bool Archive => ArchiveEnabled && WorkflowEnabled && !Demo && !LocalWrites;
+    /// <summary>Admins can archive and restore reports.</summary>
+    public bool CanArchive => Archive && PublicWorkflow;
 }
 
 public sealed class MapOptions

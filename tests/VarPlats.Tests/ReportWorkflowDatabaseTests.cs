@@ -184,6 +184,8 @@ public sealed class ReportWorkflowDatabaseTests
         await db.GetService<IMigrator>().MigrateAsync("20261119061342_ContentFlags");
         await CheckContentFlagsAsync(contexts, legacy.Id, approved.Id, pending.Id, firstAuthorActionId,
             firstMember, secondMember, admin, firstUser.Id, secondUser.Id);
+        await db.GetService<IMigrator>().MigrateAsync("20261119222822_ReportArchive");
+        await CheckReportArchiveAsync(contexts, approved, firstMember, admin);
 
         await DeleteAccountViaEndpoint(connectionString, firstUser.Id, legacy.Id);
         await using (var check = contexts.CreateDbContext())
@@ -327,6 +329,60 @@ public sealed class ReportWorkflowDatabaseTests
         // Left: the dismissed flag on the approved report and the one on the legacy report.
         Assert.Equal(2, await db.ContentFlags.CountAsync(flag => flag.ReporterId == secondUserId));
         await db.ContentFlags.Where(flag => flag.ReportId == legacyId).ExecuteDeleteAsync();
+    }
+
+    private static async Task CheckReportArchiveAsync(
+        TestContextFactory contexts, Report approved, ClaimsPrincipal member, ClaimsPrincipal admin)
+    {
+        var mode = new ReportingMode(false, false, true, true, false, true);
+        var archives = new ReportArchiveCommands(mode, new DatabaseReportArchiveStore(contexts, mode),
+            SyntheticReportAccountAccess.Instance);
+        var visible = new DatabaseReportStore(contexts, mode);
+        var switchedOff = new DatabaseReportStore(contexts, new ReportingMode(false, false, true, true));
+        var actions = new ReportActionCommands(mode, new DatabaseReportActionStore(contexts, mode),
+            accountAccess: SyntheticReportAccountAccess.Instance);
+        Assert.True(MapArea.TryCreate(approved.Latitude - 0.01, approved.Longitude - 0.01,
+            approved.Latitude + 0.01, approved.Longitude + 0.01, out var around, out _));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            archives.ArchiveAsync(member, approved.Id, new ReportArchiveDraft()));
+        Assert.False(await archives.ArchiveAsync(admin, Guid.NewGuid(), new ReportArchiveDraft()));
+        Assert.True(await archives.ArchiveAsync(admin, approved.Id,
+            new ReportArchiveDraft { Reason = ArchiveReason.Resolved, Note = "  Syntetisk notering.  " }));
+        Assert.False(await archives.ArchiveAsync(admin, approved.Id, new ReportArchiveDraft()));
+
+        // Archived reports leave every list but keep their page; with the switch off nothing is filtered.
+        Assert.DoesNotContain(await visible.ListAsync(), item => item.Id == approved.Id);
+        Assert.DoesNotContain((await visible.ListInAreaAsync(around)).Reports, item => item.Id == approved.Id);
+        Assert.DoesNotContain(await visible.ListNearAsync(approved.Latitude, approved.Longitude),
+            item => item.Report.Id == approved.Id);
+        Assert.NotNull(await visible.GetAsync(approved.Id));
+        Assert.Contains(await switchedOff.ListAsync(), item => item.Id == approved.Id);
+        var state = await archives.GetAsync(approved.Id);
+        Assert.Equal(ArchiveReason.Resolved, state!.Reason);
+        Assert.Equal("Syntetisk notering.", state.Note);
+        Assert.Equal(approved.Id, Assert.Single(await archives.ListAsync(admin)).ReportId);
+        Assert.False(await actions.AddAsync(member, approved.Id,
+            new ReportActionDraft { Description = "Syntetisk åtgärd på arkiverad rapport." }));
+
+        Assert.True(await archives.RestoreAsync(admin, approved.Id));
+        Assert.False(await archives.RestoreAsync(admin, approved.Id));
+        Assert.Null(await archives.GetAsync(approved.Id));
+        Assert.Contains(await visible.ListAsync(), item => item.Id == approved.Id);
+        Assert.Contains((await visible.ListInAreaAsync(around)).Reports, item => item.Id == approved.Id);
+        Assert.Empty(await archives.ListAsync(admin));
+        var history = await archives.HistoryAsync(admin, approved.Id);
+        Assert.Equal([ArchiveEventKind.Restored, ArchiveEventKind.Archived], history.Select(item => item.Kind));
+        Assert.Null(history[0].Reason);
+        Assert.Equal(ArchiveReason.Resolved, history[1].Reason);
+
+        // A restore event cannot carry a reason.
+        await using var db = contexts.CreateDbContext();
+        var badEvent = Guid.NewGuid();
+        await Assert.ThrowsAsync<PostgresException>(() => db.Database.ExecuteSqlAsync($"""
+            INSERT INTO report_archive_events ("Id", "ReportId", "Kind", "Reason", "Note", "CreatedAt")
+            VALUES ({badEvent}, {approved.Id}, 1, 0, NULL, now());
+            """));
     }
 
     private static async Task CheckCurrentAccountAccess(ServiceProvider provider)

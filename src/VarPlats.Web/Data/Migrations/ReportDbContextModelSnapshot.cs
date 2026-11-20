@@ -18,7 +18,7 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119061342_ContentFlags";
+    public override string LastMigrationId => "20261119222822_ReportArchive";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -396,6 +396,67 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                     });
             });
 
+        modelBuilder.Entity("VarPlats.Web.Data.ReportArchiveEntity", b =>
+            {
+                b.Property<Guid>("ReportId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("ArchivedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Note")
+                    .HasMaxLength(500)
+                    .HasColumnType("character varying(500)");
+
+                b.Property<int>("Reason")
+                    .HasColumnType("integer");
+
+                b.HasKey("ReportId");
+
+                b.HasIndex("ArchivedAt");
+
+                b.ToTable("report_archives", t =>
+                    {
+                        t.HasCheckConstraint("CK_report_archives_Note", "\"Note\" IS NULL OR length(trim(\"Note\")) BETWEEN 1 AND 500");
+
+                        t.HasCheckConstraint("CK_report_archives_Reason", "\"Reason\" BETWEEN 0 AND 3");
+                    });
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportArchiveEventEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int>("Kind")
+                    .HasColumnType("integer");
+
+                b.Property<string>("Note")
+                    .HasMaxLength(500)
+                    .HasColumnType("character varying(500)");
+
+                b.Property<int?>("Reason")
+                    .HasColumnType("integer");
+
+                b.Property<Guid>("ReportId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ReportId", "CreatedAt");
+
+                b.ToTable("report_archive_events", t =>
+                    {
+                        t.HasCheckConstraint("CK_report_archive_events_Kind", "(\"Kind\" = 0 AND \"Reason\" BETWEEN 0 AND 3) OR (\"Kind\" = 1 AND \"Reason\" IS NULL AND \"Note\" IS NULL)");
+
+                        t.HasCheckConstraint("CK_report_archive_events_Note", "\"Note\" IS NULL OR length(trim(\"Note\")) BETWEEN 1 AND 500");
+                    });
+            });
+
         modelBuilder.Entity("VarPlats.Web.Data.ReportEntity", b =>
             {
                 b.Property<Guid>("Id")
@@ -666,6 +727,24 @@ partial class ReportDbContextModelSnapshot : ModelSnapshot
                     .HasForeignKey("AuthorId")
                     .OnDelete(DeleteBehavior.SetNull);
 
+                b.HasOne("VarPlats.Web.Data.ReportEntity", null)
+                    .WithMany()
+                    .HasForeignKey("ReportId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportArchiveEntity", b =>
+            {
+                b.HasOne("VarPlats.Web.Data.ReportEntity", null)
+                    .WithOne()
+                    .HasForeignKey("VarPlats.Web.Data.ReportArchiveEntity", "ReportId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("VarPlats.Web.Data.ReportArchiveEventEntity", b =>
+            {
                 b.HasOne("VarPlats.Web.Data.ReportEntity", null)
                     .WithMany()
                     .HasForeignKey("ReportId")

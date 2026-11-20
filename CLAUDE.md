@@ -43,13 +43,14 @@ Behaviour is driven by config flags validated at startup; invalid combinations t
 - `Reporting:PublicWrites` requires `Authentication:Enabled` **and** `Reporting:WorkflowEnabled`; `WorkflowEnabled` requires authentication; authentication requires database mode (not Demo).
 - `Photos:Enabled` defaults to false and additionally depends on auth/workflow/public-write gates.
 - `Reporting:FlagsEnabled` (abuse flags, `ContentFlagCommands`) defaults to false and requires `WorkflowEnabled`; `ReportingMode.FlagQueue` lets admins read the queue, `CanFlag` additionally needs public writes.
+- `Reporting:ArchiveEnabled` (admin archiving, `ReportArchiveCommands`) defaults to false and requires `WorkflowEnabled`. When on (`ReportingMode.Archive`), `DatabaseReportStore` list reads exclude rows in `report_archives` and new actions are refused; `GetAsync` still returns archived reports for their page. Never reference the archive (or any unapplied migration's) table in SQL that runs while its switch is off.
 - Production default is **read-only** with a database. Do not loosen these guards or "sneak-enable" public writes as a UI improvement.
 
 ### Data and schema
 
 - PostGIS `geography(Point,4326)`: **longitude is X, latitude is Y**. Latitude is limited to ±85 (Web Mercator). The map and `GET /api/reports?south=&west=&north=&east=` load at most 200 newest reports in the visible area (`MapArea` in Core, `ListInAreaAsync` on stores; truncation via `ReportPage.Truncated` / `X-Reports-Truncated`). Without an area, the latest 200 overall.
 - The base schema comes from versioned init SQL (`deploy/sql/001-initial.sql`), not EF at startup. Init SQL only runs for a fresh volume.
-- EF migrations in `src/VarPlats.Web/Data/Migrations` (review workflow, actions/confirmations, photos, content flags) are **not** applied automatically and are not applied on the Pi by release; each needs separate review, backup and owner approval. When the workflow is disabled, reads must not touch the newer tables so older schemas keep working.
+- EF migrations in `src/VarPlats.Web/Data/Migrations` (review workflow, actions/confirmations, photos, content flags, report archive) are **not** applied automatically and are not applied on the Pi by release; each needs separate review, backup and owner approval. When the workflow is disabled, reads must not touch the newer tables so older schemas keep working.
 - Submissions live in a separate table; only approved ones are copied into the public `reports` table. Report status with workflow on is computed at read time from actions and confirmations by *other* accounts (self-confirmation forbidden; one confirmation per action+account via composite PK).
 
 ## Project rules (from .github/copilot-instructions.md and CONTRIBUTING.md)

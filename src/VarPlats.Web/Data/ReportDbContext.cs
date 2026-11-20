@@ -71,6 +71,25 @@ public sealed class ContentFlagEntity
     public DateTimeOffset? DismissedAt { get; set; }
 }
 
+/// <summary>Row exists while a report is archived. A separate table keeps the reports table and its grants unchanged.</summary>
+public sealed class ReportArchiveEntity
+{
+    public Guid ReportId { get; set; }
+    public ArchiveReason Reason { get; set; }
+    public string? Note { get; set; }
+    public DateTimeOffset ArchivedAt { get; set; }
+}
+
+public sealed class ReportArchiveEventEntity
+{
+    public Guid Id { get; set; }
+    public Guid ReportId { get; set; }
+    public ArchiveEventKind Kind { get; set; }
+    public ArchiveReason? Reason { get; set; }
+    public string? Note { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public sealed class IdentityAccountActivity
 {
     public Guid UserId { get; set; }
@@ -97,6 +116,8 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
     public DbSet<ReportPhotoEntity> ReportPhotos => Set<ReportPhotoEntity>();
     public DbSet<IdentityAccountActivity> IdentityAccountActivities => Set<IdentityAccountActivity>();
     public DbSet<ContentFlagEntity> ContentFlags => Set<ContentFlagEntity>();
+    public DbSet<ReportArchiveEntity> ReportArchives => Set<ReportArchiveEntity>();
+    public DbSet<ReportArchiveEventEntity> ReportArchiveEvents => Set<ReportArchiveEventEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -246,6 +267,40 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
                 .OnDelete(DeleteBehavior.Cascade)
                 .IsRequired();
         });
+        modelBuilder.Entity<ReportArchiveEntity>(entity =>
+        {
+            entity.ToTable("report_archives", table =>
+            {
+                table.HasCheckConstraint("CK_report_archives_Reason", "\"Reason\" BETWEEN 0 AND 3");
+                table.HasCheckConstraint("CK_report_archives_Note",
+                    "\"Note\" IS NULL OR length(trim(\"Note\")) BETWEEN 1 AND 500");
+            });
+            entity.HasKey(archive => archive.ReportId);
+            entity.Property(archive => archive.Note).HasMaxLength(ReportArchiveDraft.NoteMaxLength);
+            entity.HasIndex(archive => archive.ArchivedAt);
+            entity.HasOne<ReportEntity>()
+                .WithOne()
+                .HasForeignKey<ReportArchiveEntity>(archive => archive.ReportId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ReportArchiveEventEntity>(entity =>
+        {
+            entity.ToTable("report_archive_events", table =>
+            {
+                table.HasCheckConstraint("CK_report_archive_events_Kind",
+                    "(\"Kind\" = 0 AND \"Reason\" BETWEEN 0 AND 3) OR (\"Kind\" = 1 AND \"Reason\" IS NULL AND \"Note\" IS NULL)");
+                table.HasCheckConstraint("CK_report_archive_events_Note",
+                    "\"Note\" IS NULL OR length(trim(\"Note\")) BETWEEN 1 AND 500");
+            });
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Note).HasMaxLength(ReportArchiveDraft.NoteMaxLength);
+            entity.HasIndex(item => new { item.ReportId, item.CreatedAt });
+            entity.HasOne<ReportEntity>()
+                .WithMany()
+                .HasForeignKey(item => item.ReportId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+        });
         modelBuilder.Entity<IdentityAccountActivity>(entity =>
         {
             entity.ToTable("IdentityAccountActivity");
@@ -269,9 +324,16 @@ public sealed class DatabaseReportStore(
     public async Task<IReadOnlyList<Report>> ListAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        return await ReadAsync(db, db.Reports.AsNoTracking().OrderByDescending(report => report.CreatedAt)
+        return await ReadAsync(db, Visible(db, db.Reports.AsNoTracking()).OrderByDescending(report => report.CreatedAt)
             .Take(200), cancellationToken);
     }
+
+    // Archived reports leave the map, list, API and nearby hints but GetAsync still returns them for their page.
+    // The archive table is only queried when the switch is on, so older schemas keep working.
+    private IQueryable<ReportEntity> Visible(ReportDbContext db, IQueryable<ReportEntity> query)
+        => mode.Archive
+            ? query.Where(report => !db.ReportArchives.Any(archive => archive.ReportId == report.Id))
+            : query;
 
     // Small areas go through the GiST index on the geography column. Geography polygon edges are great-circle
     // arcs, so the envelope is densified and padded to cover the lat/lon rectangle; the exact rectangle test
@@ -317,7 +379,7 @@ public sealed class DatabaseReportStore(
                 WHERE ST_Y("Location"::geometry) BETWEEN {south} AND {north}
                   AND ST_X("Location"::geometry) BETWEEN {west} AND {east}
                 """);
-        var reports = await ReadAsync(db, query.AsNoTracking().OrderByDescending(report => report.CreatedAt)
+        var reports = await ReadAsync(db, Visible(db, query.AsNoTracking()).OrderByDescending(report => report.CreatedAt)
             .ThenBy(report => report.Id).Take(MapArea.MaxResults + 1), cancellationToken);
         return ReportPage.FromLookahead(reports);
     }
@@ -336,7 +398,7 @@ public sealed class DatabaseReportStore(
             SELECT * FROM reports
             WHERE ST_DWithin("Location", ST_SetSRID(ST_MakePoint({longitude}, {latitude}), 4326)::geography, {radius})
             """);
-        var candidates = await ReadAsync(db, query.AsNoTracking().OrderByDescending(report => report.CreatedAt)
+        var candidates = await ReadAsync(db, Visible(db, query.AsNoTracking()).OrderByDescending(report => report.CreatedAt)
             .Take(NearbyCandidateLimit), cancellationToken);
         return ReportProximity.Select(candidates, latitude, longitude);
     }
