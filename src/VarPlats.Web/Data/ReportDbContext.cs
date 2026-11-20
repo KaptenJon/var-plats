@@ -46,6 +46,19 @@ public sealed class ReportActionConfirmationEntity
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>
+/// History of a withdrawn confirmation. The active row is moved here, so status reads that only look at
+/// report_action_confirmations never count it. AccountId becomes null when the account is deleted.
+/// </summary>
+public sealed class ReportActionConfirmationWithdrawalEntity
+{
+    public Guid Id { get; set; }
+    public Guid ActionId { get; set; }
+    public Guid? AccountId { get; set; }
+    public DateTimeOffset ConfirmedAt { get; set; }
+    public DateTimeOffset WithdrawnAt { get; set; }
+}
+
 public sealed class ReportPhotoEntity
 {
     public Guid Id { get; set; }
@@ -113,6 +126,8 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
     public DbSet<ReportSubmissionEntity> ReportSubmissions => Set<ReportSubmissionEntity>();
     public DbSet<ReportActionEntity> ReportActions => Set<ReportActionEntity>();
     public DbSet<ReportActionConfirmationEntity> ReportActionConfirmations => Set<ReportActionConfirmationEntity>();
+    public DbSet<ReportActionConfirmationWithdrawalEntity> ReportActionConfirmationWithdrawals
+        => Set<ReportActionConfirmationWithdrawalEntity>();
     public DbSet<ReportPhotoEntity> ReportPhotos => Set<ReportPhotoEntity>();
     public DbSet<IdentityAccountActivity> IdentityAccountActivities => Set<IdentityAccountActivity>();
     public DbSet<ContentFlagEntity> ContentFlags => Set<ContentFlagEntity>();
@@ -202,6 +217,23 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
                 .HasForeignKey(confirmation => confirmation.AccountId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .IsRequired();
+        });
+        modelBuilder.Entity<ReportActionConfirmationWithdrawalEntity>(entity =>
+        {
+            entity.ToTable("report_action_confirmation_withdrawals", table =>
+                table.HasCheckConstraint("CK_report_action_confirmation_withdrawals_Order",
+                    "\"WithdrawnAt\" >= \"ConfirmedAt\""));
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.ActionId, item.AccountId });
+            entity.HasOne<ReportActionEntity>()
+                .WithMany()
+                .HasForeignKey(item => item.ActionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+            entity.HasOne<IdentityUser<Guid>>()
+                .WithMany()
+                .HasForeignKey(item => item.AccountId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
         modelBuilder.Entity<ReportPhotoEntity>(entity =>
         {

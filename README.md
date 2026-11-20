@@ -45,7 +45,8 @@ automatiskt. Rapportering sparar här i lokal utvecklingsdatabas.
 | Leaflet-karta, kategorifilter och tillgänglig rapportlista | Aktiverad rapportkö, överklaganden och missbruksskydd |
 | Validering och rapportering i isolerad lokal demo | Aktiverad bildhantering och färdiga modereringsverktyg |
 | Google/GitHub-inloggning med verifierad e-post, passkey/FIDO2 och uttrycklig kontolänkning; publik registrering aktiveras i den godkända Pi-releasen | Aktiverad publik åtgärdsrapportering och missbruksskydd |
-| Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd som standard men påslagen i Pi-releasen | Tvister, återtagande och skydd mot samordnad manipulation |
+| Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd som standard men påslagen i Pi-releasen | Tvister och skydd mot samordnad manipulation |
+| Kod för att ta tillbaka en egen bekräftelse med sparad historik, avstängd bakom `Reporting:ConfirmationWithdrawalEnabled` men påslagen i Pi-releasen | Överklagande av bekräftelser |
 | Kod för att anmäla rapporter och åtgärdstexter till administratörer, avstängd bakom `Reporting:FlagsEnabled` | Överklaganden och skydd mot falska anmälningar |
 | Kod för att arkivera och återställa rapporter, avstängd bakom `Reporting:ArchiveEnabled` | Sammanslagning av dubbletter |
 | Skrivgränser per konto och gräns för läs-API:t, avstängda bakom `Reporting:RateLimits:Enabled` | Delade gränser mellan flera instanser och skydd mot många konton (Sybil) |
@@ -72,7 +73,8 @@ autentisering och separat granskad databasbehörighet. Befintliga rapporter kan
 läsas utan det nya schemat. Demo eller lokala skrivningar i Production stoppar uppstarten.
 
 **Ägarbeslut 2026-11-20:** den taggade Pi-releasen slår på alla brytare som finns
-på `main` – granskning, publika skrivningar, åtgärder och bekräftelser, anmälningar,
+på `main` – granskning, publika skrivningar, åtgärder och bekräftelser, återtagande
+av bekräftelser, anmälningar,
 arkivering, skrivgränser och bilder. `deploy/compose.yml` och `.env.example`
 behåller `false`, så en vanlig Compose-körning är fortfarande skrivskyddad.
 Migreringarna tillämpas aldrig automatiskt: ägaren tar backup och kör
@@ -92,6 +94,15 @@ Kontoborttagning anonymiserar sparade åtgärder och tar bort kontots bekräftel
 men rensar inte personuppgifter som skrivits i fritext. Rapportstatus räknas om
 från de åtgärder och bekräftelser som finns kvar. När arbetsflödet är avstängt
 döljs åtgärderna och den tidigare lagrade rapportstatusen visas.
+
+Om även `Reporting:ConfirmationWithdrawalEnabled` (av som standard) aktiveras kan
+ett konto ta tillbaka sin egen bekräftelse med knappen "Ta tillbaka bekräftelse"
+och ett bekräftelsesteg. Statusen räknas då om utan den. Att bekräftelsen tagits
+tillbaka sparas i historiken och visas som ett antal på åtgärden, utan konto.
+Samma konto kan inte bekräfta uppgiften igen, så att statusen inte kan växlas
+fram och tillbaka. Arkiverade rapporter tar inte emot återtaganden. Migrationen
+`ConfirmationWithdrawals` tillämpas inte automatiskt; i Pi-releasen ingår den i
+`deploy/pi-workflow-migrations.sql` som ägaren kör manuellt.
 
 ### Bilder – avstängda som standard, påslagna i Pi-releasen
 

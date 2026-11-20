@@ -123,7 +123,8 @@ internal sealed class ReportWorkflowTestStore : IReportStore, IReportWorkflowSto
                 .OrderByDescending(entry => entry.CreatedAt)
                 .Select(entry => new ReportAction(entry.Id, entry.Description, entry.CreatedAt,
                     entry.Confirmations.Count, viewerId.HasValue && entry.AuthorId == viewerId,
-                    viewerId.HasValue && entry.Confirmations.Contains(viewerId.Value)))
+                    viewerId.HasValue && entry.Confirmations.Contains(viewerId.Value),
+                    entry.Withdrawals.Count, viewerId.HasValue && entry.Withdrawals.Contains(viewerId.Value)))
                 .ToArray());
     }
 
@@ -148,6 +149,7 @@ internal sealed class ReportWorkflowTestStore : IReportStore, IReportWorkflowSto
             var action = actions.SingleOrDefault(item => item.Id == actionId && item.ReportId == reportId);
             return Task.FromResult(action is null ? ActionConfirmationResult.NotFound
                 : action.AuthorId == accountId ? ActionConfirmationResult.OwnAction
+                : action.Withdrawals.Contains(accountId) ? ActionConfirmationResult.Withdrawn
                 : action.Confirmations.Add(accountId) ? ActionConfirmationResult.Confirmed
                 : ActionConfirmationResult.AlreadyConfirmed);
         }
@@ -157,6 +159,21 @@ internal sealed class ReportWorkflowTestStore : IReportStore, IReportWorkflowSto
     {
         lock (gate) return Task.FromResult(actions.RemoveAll(action =>
             action.Id == actionId && action.ReportId == reportId) != 0);
+    }
+
+    public Task<ConfirmationWithdrawalResult> WithdrawConfirmationAsync(
+        Guid reportId, Guid actionId, Guid accountId, CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            var action = actions.SingleOrDefault(item => item.Id == actionId && item.ReportId == reportId);
+            if (action is null)
+                return Task.FromResult(ConfirmationWithdrawalResult.NotFound);
+            if (!action.Confirmations.Remove(accountId))
+                return Task.FromResult(ConfirmationWithdrawalResult.NotConfirmed);
+            action.Withdrawals.Add(accountId);
+            return Task.FromResult(ConfirmationWithdrawalResult.Withdrawn);
+        }
     }
 
     private Report WithStatus(Report report)
@@ -182,5 +199,6 @@ internal sealed class ReportWorkflowTestStore : IReportStore, IReportWorkflowSto
         public string Description { get; } = description;
         public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
         public HashSet<Guid> Confirmations { get; } = [];
+        public HashSet<Guid> Withdrawals { get; } = [];
     }
 }
