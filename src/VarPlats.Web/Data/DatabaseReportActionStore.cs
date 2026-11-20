@@ -49,6 +49,10 @@ public sealed class DatabaseReportActionStore(
         var actionId = Guid.NewGuid();
         var createdAt = DateTimeOffset.UtcNow;
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        // A report hidden by flags takes no new actions until a moderator restores it.
+        if (mode.HideOnFlag && await FlagVisibility.IsReportHiddenAsync(
+                db, reportId, mode.HideOnFlagMinimumFlags, cancellationToken))
+            return false;
         // Archived reports take no new actions. The archive table is only named when the switch is on, because
         // PostgreSQL rejects a statement that mentions a missing table even in an unused branch.
         var inserted = mode.Archive
@@ -78,6 +82,12 @@ public sealed class DatabaseReportActionStore(
         await using var transaction = mode.Points ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         if (transaction is not null)
             await PointsLedger.LockActionAsync(db, actionId, cancellationToken);
+        // Hidden content earns no new confirmations (and so no points) while it waits for review.
+        if (mode.HideOnFlag && await FlagVisibility.IsActionOrReportHiddenAsync(
+                db, reportId, actionId, mode.HideOnFlagMinimumFlags, cancellationToken))
+            return await db.ReportActions.AnyAsync(
+                    action => action.Id == actionId && action.ReportId == reportId, cancellationToken)
+                ? ActionConfirmationResult.Hidden : ActionConfirmationResult.NotFound;
         // A withdrawn confirmation cannot be given again, so the status cannot be flipped back and forth.
         // The withdrawal table is only named when the switch is on, because PostgreSQL rejects a statement
         // that mentions a missing table even in an unused branch.

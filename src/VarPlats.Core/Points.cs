@@ -25,9 +25,9 @@ public enum PointsReversalCause
     AdminRevoked = 4
 }
 
-public enum HeartResult { Added, Removed, OwnAction, NotFound, Archived }
+public enum HeartResult { Added, Removed, OwnAction, NotFound, Archived, Hidden }
 
-public enum GiftResult { Sent, OwnAction, NoRecipient, InsufficientBalance, OverTransferLimit, OverDailyLimit, NotFound, Archived }
+public enum GiftResult { Sent, OwnAction, NoRecipient, InsufficientBalance, OverTransferLimit, OverDailyLimit, NotFound, Archived, Hidden }
 
 /// <summary>
 /// Amounts and limits for the points ledger. Every ledger row stores <see cref="RuleVersion"/>, so a change of

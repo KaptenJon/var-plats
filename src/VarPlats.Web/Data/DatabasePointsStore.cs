@@ -57,6 +57,8 @@ public sealed class DatabasePointsStore(
         }
         if (await IsArchivedAsync(db, reportId, cancellationToken))
             return HeartResult.Archived;
+        if (await IsHiddenAsync(db, reportId, actionId, cancellationToken))
+            return HeartResult.Hidden;
         var now = DateTimeOffset.UtcNow;
         var inserted = await db.Database.ExecuteSqlAsync($"""
             INSERT INTO "action_hearts" ("ActionId", "AccountId", "CreatedAt")
@@ -96,6 +98,8 @@ public sealed class DatabasePointsStore(
             return GiftResult.NoRecipient;
         if (await IsArchivedAsync(db, reportId, cancellationToken))
             return GiftResult.Archived;
+        if (await IsHiddenAsync(db, reportId, actionId, cancellationToken))
+            return GiftResult.Hidden;
         var now = DateTimeOffset.UtcNow;
         var balance = await BalanceAsync(db, giverId, cancellationToken);
         if (balance < amount)
@@ -191,6 +195,15 @@ public sealed class DatabasePointsStore(
     private Task<bool> IsArchivedAsync(ReportDbContext db, Guid reportId, CancellationToken cancellationToken)
         => mode.Archive
             ? db.ReportArchives.AnyAsync(archive => archive.ReportId == reportId, cancellationToken)
+            : Task.FromResult(false);
+
+    // Hidden content keeps its hearts and ledger rows but takes no new ones; content_flags is only named when
+    // HideOnFlag is on.
+    private Task<bool> IsHiddenAsync(ReportDbContext db, Guid reportId, Guid actionId,
+        CancellationToken cancellationToken)
+        => mode.HideOnFlag
+            ? FlagVisibility.IsActionOrReportHiddenAsync(db, reportId, actionId, mode.HideOnFlagMinimumFlags,
+                cancellationToken)
             : Task.FromResult(false);
 
     private void RequireRead()

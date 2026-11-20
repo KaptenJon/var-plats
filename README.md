@@ -89,6 +89,8 @@ annat konto bekräftar en åtgärd, så gåvor provas enklast med två medlemmar
 | Kod för åtgärdsuppgifter och bekräftelser från andra konton, avstängd som standard men påslagen i Pi-releasen | Tvister och skydd mot samordnad manipulation |
 | Kod för att ta tillbaka en egen bekräftelse med sparad historik, avstängd bakom `Reporting:ConfirmationWithdrawalEnabled` men påslagen i Pi-releasen | Överklagande av bekräftelser |
 | Kod för att anmäla rapporter och åtgärdstexter till administratörer, avstängd bakom `Reporting:FlagsEnabled` | Överklaganden och skydd mot falska anmälningar |
+| Kod för direktpublicering av rapporter utan förhandsgranskning, avstängd bakom `Reporting:DirectPublish` (inte påslagen i releasen) | Granskning i efterhand med svarstid |
+| Kod som döljer anmält innehåll direkt i väntan på granskning, avstängd bakom `Reporting:HideOnFlag` (inte påslagen i releasen) | Överklagande av dolt innehåll och skydd mot många konton som anmäler tillsammans |
 | Kod för att arkivera och återställa rapporter, avstängd bakom `Reporting:ArchiveEnabled` | Sammanslagning av dubbletter |
 | Skrivgränser per konto och gräns för läs-API:t, avstängda bakom `Reporting:RateLimits:Enabled` | Delade gränser mellan flera instanser och skydd mot många konton (Sybil) |
 | Kod för poäng vid bekräftade åtgärder, hjärtan och poänggåvor, avstängd bakom `Reporting:PointsEnabled` men påslagen i Pi-releasen | Bedrägeribedömning, spärrar och administratörsåterkallelse av poäng |
@@ -129,6 +131,37 @@ Beslutet gör **inte** lanseringskraven klara: integritets- och retentionsbeslut
 villkor och integritetsinformation, bemannad granskningskö, prov av backup och
 återställning, prov av clamd på ARM64 och lastprov på Pi:n är fortfarande öppna.
 Organisationsbevakning blir inte officiell kommunal felanmälan.
+
+**Ägarbeslut om modereringsmodellen (2026-11-20, kod finns men är avstängd):**
+ägaren vill inte att varje rapport ska kräva godkännande, men anmält innehåll
+ska försvinna direkt och gå till en moderator. Två egna brytare, båda `false`
+som standard och **inte** påslagna i `release.yml` (det är ett separat ägarsteg):
+
+- `Reporting:DirectPublish` kräver `Reporting:WorkflowEnabled` och
+  `Reporting:PublicWrites`. Ett inloggat medlemskontos rapport publiceras i
+  samma transaktion som inskicket, precis som ett godkännande; en bild går
+  fortfarande genom hela bildkedjan med ClamAV och kontrolleras mot sin hash
+  innan rapporten publiceras. `/moderering` fungerar som förut för det som
+  fortfarande väntar, och administratörer kan ta bort rapporter. Det betyder
+  att **ogranskat innehåll, även bilder, är publikt tills någon anmäler det**.
+- `Reporting:HideOnFlag` kräver `Reporting:FlagsEnabled`. Så länge minst
+  `HideOnFlag:MinimumFlags` (standard 1, tillåtet 1–50) öppna anmälningar från
+  andra konton än upphovskontot finns döljs rapporten eller åtgärdstexten från
+  kartan, listan, `GET /api/reports`, närliggande rapporter och delade
+  `?rapport=`-länkar för alla, och på rapportsidan visas bara texten
+  ”Dolt i väntan på granskning” för alla utom administratörer och
+  upphovskontot. Döljandet räknas fram vid läsning ur `content_flags`; ingen
+  ny tabell eller migration behövs. I granskningskön återställer moderatorn
+  (anmälningarna avfärdas och innehållet visas igen) eller tar bort innehållet.
+  Dolt innehåll tar inte emot nya åtgärder, bekräftelser, hjärtan eller gåvor
+  men behåller sina poänghändelser; borttagning återför poängen som tidigare.
+
+Risk: med standardvärdet 1 kan ett enda konto dölja innehåll. Skydden är att
+upphovskontots egna anmälningar inte räknas, att samma konto bara kan anmäla
+ett objekt en gång (även efter återställning), dygnsgränsen på 20 anmälningar
+per konto och skrivgränsen för anmälningar. Många samordnade konton kan
+fortfarande dölja mycket tills en moderator hinner återställa det; en bemannad
+kö är därför ett krav innan brytarna slås på.
 
 Om arbetsflödet senare aktiveras kan ett behörigt konto välja att publicera en
 åtgärdsbeskrivning direkt på en publicerad rapport. Den är obekräftad tills ett

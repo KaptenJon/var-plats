@@ -62,10 +62,11 @@ public interface IPhotoReader
     Task<IReadOnlySet<Guid>> VisibleReportIdsAsync(
         ClaimsPrincipal viewer, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default);
     Task<IReadOnlySet<Guid>> VisibleActionIdsAsync(
-        IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default);
+        ClaimsPrincipal viewer, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default);
     Task<PhotoContent?> ReadReportAsync(
         ClaimsPrincipal viewer, Guid id, CancellationToken cancellationToken = default);
-    Task<PhotoContent?> ReadActionAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<PhotoContent?> ReadActionAsync(
+        ClaimsPrincipal viewer, Guid id, CancellationToken cancellationToken = default);
 }
 
 public sealed class DisabledPhotoReader : IPhotoReader
@@ -74,12 +75,13 @@ public sealed class DisabledPhotoReader : IPhotoReader
         ClaimsPrincipal viewer, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid>());
     public Task<IReadOnlySet<Guid>> VisibleActionIdsAsync(
-        IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default)
+        ClaimsPrincipal viewer, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid>());
     public Task<PhotoContent?> ReadReportAsync(
         ClaimsPrincipal viewer, Guid id, CancellationToken cancellationToken = default)
         => Task.FromResult<PhotoContent?>(null);
-    public Task<PhotoContent?> ReadActionAsync(Guid id, CancellationToken cancellationToken = default)
+    public Task<PhotoContent?> ReadActionAsync(
+        ClaimsPrincipal viewer, Guid id, CancellationToken cancellationToken = default)
         => Task.FromResult<PhotoContent?>(null);
 }
 
@@ -94,17 +96,20 @@ public sealed class DatabasePhotoReader(
         if (!CanRead || ids.Count == 0) return new HashSet<Guid>();
         var rights = await VerifyAsync(viewer, cancellationToken);
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var matches = await ReportQuery(db, rights, ids.ToArray())
+        var visibleIds = await WithoutHiddenReportsAsync(db, rights, ids.ToArray(), cancellationToken);
+        var matches = await ReportQuery(db, rights, visibleIds)
             .Select(row => row.ParentId).ToArrayAsync(cancellationToken);
         return matches.ToHashSet();
     }
 
     public async Task<IReadOnlySet<Guid>> VisibleActionIdsAsync(
-        IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default)
+        ClaimsPrincipal viewer, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default)
     {
         if (!CanRead || ids.Count == 0) return new HashSet<Guid>();
+        var rights = await VerifyAsync(viewer, cancellationToken);
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var matches = await ActionQuery(db, ids.ToArray())
+        var visibleIds = await WithoutHiddenActionsAsync(db, rights, ids.ToArray(), cancellationToken);
+        var matches = await ActionQuery(db, visibleIds)
             .Select(row => row.ParentId).ToArrayAsync(cancellationToken);
         return matches.ToHashSet();
     }
@@ -115,16 +120,60 @@ public sealed class DatabasePhotoReader(
         if (!CanRead || id == Guid.Empty) return null;
         var rights = await VerifyAsync(viewer, cancellationToken);
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var row = await ReportQuery(db, rights, [id]).SingleOrDefaultAsync(cancellationToken);
+        var row = await ReportQuery(db, rights, await WithoutHiddenReportsAsync(db, rights, [id], cancellationToken))
+            .SingleOrDefaultAsync(cancellationToken);
         return await ReadAsync(row, cancellationToken);
     }
 
-    public async Task<PhotoContent?> ReadActionAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<PhotoContent?> ReadActionAsync(
+        ClaimsPrincipal viewer, Guid id, CancellationToken cancellationToken = default)
     {
         if (!CanRead || id == Guid.Empty) return null;
+        var rights = await VerifyAsync(viewer, cancellationToken);
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var row = await ActionQuery(db, [id]).SingleOrDefaultAsync(cancellationToken);
+        var row = await ActionQuery(db, await WithoutHiddenActionsAsync(db, rights, [id], cancellationToken))
+            .SingleOrDefaultAsync(cancellationToken);
         return await ReadAsync(row, cancellationToken);
+    }
+
+    // Hide-on-flag: a hidden report's photo is only served to admins and the report's author. Pending and rejected
+    // submissions are never flagged, so their own visibility rules in PhotoVisibility are unchanged.
+    private async Task<Guid[]> WithoutHiddenReportsAsync(
+        ReportDbContext db, ReportAccountRights viewer, Guid[] ids, CancellationToken cancellationToken)
+    {
+        if (!mode.HideOnFlag || viewer.CanModerate) return ids;
+        var hidden = await FlagVisibility.HiddenReportIdsAsync(db, ids, mode.HideOnFlagMinimumFlags, cancellationToken);
+        if (hidden.Length == 0) return ids;
+        var viewerId = viewer.CanReport ? viewer.AccountId.GetValueOrDefault() : Guid.Empty;
+        var own = viewerId == Guid.Empty ? Array.Empty<Guid>() : await db.ReportSubmissions.AsNoTracking()
+            .Where(submission => hidden.Contains(submission.Id) && submission.AuthorId == viewerId)
+            .Select(submission => submission.Id).ToArrayAsync(cancellationToken);
+        return ids.Except(hidden.Except(own)).ToArray();
+    }
+
+    // A hidden action text's photo, or any action photo on a hidden report, is only served to admins and to the
+    // author of the hidden item, matching what the report page shows.
+    private async Task<Guid[]> WithoutHiddenActionsAsync(
+        ReportDbContext db, ReportAccountRights viewer, Guid[] ids, CancellationToken cancellationToken)
+    {
+        if (!mode.HideOnFlag || viewer.CanModerate || ids.Length == 0) return ids;
+        var minimum = mode.HideOnFlagMinimumFlags;
+        var hiddenActions = await FlagVisibility.HiddenActionIdsAsync(db, ids, minimum, cancellationToken);
+        var parents = await db.ReportActions.AsNoTracking().Where(action => ids.Contains(action.Id))
+            .Select(action => new { action.Id, action.ReportId, action.AuthorId }).ToArrayAsync(cancellationToken);
+        var reportIds = parents.Select(action => action.ReportId).Distinct().ToArray();
+        var hiddenReports = await FlagVisibility.HiddenReportIdsAsync(db, reportIds, minimum, cancellationToken);
+        if (hiddenActions.Length == 0 && hiddenReports.Length == 0) return ids;
+        var viewerId = viewer.CanReport ? viewer.AccountId.GetValueOrDefault() : Guid.Empty;
+        var ownReports = viewerId == Guid.Empty || hiddenReports.Length == 0 ? Array.Empty<Guid>() : await db.ReportSubmissions
+            .AsNoTracking()
+            .Where(submission => hiddenReports.Contains(submission.Id) && submission.AuthorId == viewerId)
+            .Select(submission => submission.Id).ToArrayAsync(cancellationToken);
+        var withheld = parents.Where(action =>
+                (hiddenActions.Contains(action.Id) && (viewerId == Guid.Empty || action.AuthorId != viewerId))
+                || (hiddenReports.Contains(action.ReportId) && !ownReports.Contains(action.ReportId)))
+            .Select(action => action.Id);
+        return ids.Except(withheld).ToArray();
     }
 
     private static IQueryable<VisiblePhoto> ReportQuery(ReportDbContext db, ReportAccountRights viewer, Guid[] ids)
@@ -170,7 +219,7 @@ public static class PhotoEndpoints
             HttpContext context, Guid id, IPhotoReader reader, CancellationToken cancellationToken) =>
         {
             SetPrivacyHeaders(context);
-            return Result(await reader.ReadActionAsync(id, cancellationToken));
+            return Result(await reader.ReadActionAsync(context.User, id, cancellationToken));
         });
     }
 

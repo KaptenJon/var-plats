@@ -32,6 +32,9 @@ var flagsEnabled = builder.Configuration.GetValue<bool>("Reporting:FlagsEnabled"
 var archiveEnabled = builder.Configuration.GetValue<bool>("Reporting:ArchiveEnabled");
 var confirmationWithdrawalEnabled = builder.Configuration.GetValue<bool>("Reporting:ConfirmationWithdrawalEnabled");
 var pointsEnabled = builder.Configuration.GetValue<bool>("Reporting:PointsEnabled");
+var directPublish = builder.Configuration.GetValue<bool>("Reporting:DirectPublish");
+var hideOnFlag = builder.Configuration.GetValue<bool>("Reporting:HideOnFlag");
+var hideOnFlagMinimumFlags = builder.Configuration.GetValue("HideOnFlag:MinimumFlags", 1);
 var authenticationEnabled = builder.Configuration.GetValue<bool>("Authentication:Enabled");
 var devAccounts = builder.Configuration.GetValue<bool>(DevAccounts.ConfigurationKey);
 if ((demo || localWrites) && !builder.Environment.IsDevelopment())
@@ -62,9 +65,16 @@ if (confirmationWithdrawalEnabled && !workflowEnabled)
         "Reporting:ConfirmationWithdrawalEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
 if (pointsEnabled && !workflowEnabled)
     throw new InvalidOperationException("Reporting:PointsEnabled kräver uttryckligt Reporting:WorkflowEnabled.");
+// Direct publishing only removes the review step for new reports; the auth and write gates above still apply.
+if (directPublish && (!workflowEnabled || !publicWrites))
+    throw new InvalidOperationException(
+        "Reporting:DirectPublish kräver uttryckligt Reporting:WorkflowEnabled och Reporting:PublicWrites.");
+if (hideOnFlag && !flagsEnabled)
+    throw new InvalidOperationException("Reporting:HideOnFlag kräver uttryckligt Reporting:FlagsEnabled.");
+ReportingMode.ValidateHideOnFlagMinimumFlags(hideOnFlagMinimumFlags);
 
 var reportingMode = new ReportingMode(demo, localWrites, publicWrites, workflowEnabled, flagsEnabled,
-    archiveEnabled, confirmationWithdrawalEnabled, pointsEnabled);
+    archiveEnabled, confirmationWithdrawalEnabled, pointsEnabled, directPublish, hideOnFlag, hideOnFlagMinimumFlags);
 var pointsOptions = builder.Configuration.GetSection("Points").Get<PointsOptions>() ?? new PointsOptions();
 pointsOptions.Validate();
 var rateLimitOptions = builder.Configuration.GetSection("Reporting:RateLimits").Get<RateLimitOptions>()

@@ -82,7 +82,7 @@ internal sealed class PhotoWorkflowDatabaseScenario : IDisposable
         await using (var db = contexts.CreateDbContext())
             actionId = await db.ReportActions.Where(action => action.ReportId == approved.Id)
                 .Select(action => action.Id).SingleAsync();
-        var actionImage = await reader.ReadActionAsync(actionId);
+        var actionImage = await reader.ReadActionAsync(new ClaimsPrincipal(), actionId);
         Assert.NotNull(actionImage);
         Assert.DoesNotContain("synthetic-private-marker", System.Text.Encoding.Latin1.GetString(actionImage.Bytes));
 
@@ -123,7 +123,7 @@ internal sealed class PhotoWorkflowDatabaseScenario : IDisposable
         Assert.NotNull(await reader.ReadReportAsync(admin, pending.Id));
         Assert.Null(await reader.ReadReportAsync(new ClaimsPrincipal(), rejected.Id));
         Assert.NotNull(await reader.ReadReportAsync(new ClaimsPrincipal(), approved.Id));
-        Assert.NotNull(await reader.ReadActionAsync(actionId));
+        Assert.NotNull(await reader.ReadActionAsync(new ClaimsPrincipal(), actionId));
         Assert.True(await reports.DecideAsync(admin, pending.Id, ReportReviewStatus.Rejected));
         Assert.Equal(4, storage.List().Count);
         await using (var db = contexts.CreateDbContext())
@@ -133,7 +133,7 @@ internal sealed class PhotoWorkflowDatabaseScenario : IDisposable
         }
 
         Assert.True(await actions.RemoveAsync(admin, approved.Id, actionId));
-        Assert.Null(await reader.ReadActionAsync(actionId));
+        Assert.Null(await reader.ReadActionAsync(new ClaimsPrincipal(), actionId));
         Assert.Equal(3, storage.List().Count);
         storage.FailDelete = true;
         Assert.True(await reports.RemoveAsync(admin, approved.Id));
@@ -149,15 +149,18 @@ internal sealed class PhotoWorkflowDatabaseScenario : IDisposable
         Assert.Equal(2, storage.List().Count);
     }
 
+    /// <summary>Shared with later scenarios, because photo writes reconcile the registry against this storage.</summary>
+    public MemoryStorage Storage => storage;
+
     public void Dispose() => processor.Dispose();
 
-    private sealed class CleanScanner : IPhotoMalwareScanner
+    internal sealed class CleanScanner : IPhotoMalwareScanner
     {
         public Task<bool> IsCleanAsync(ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken)
             => Task.FromResult(true);
     }
 
-    private sealed class MemoryStorage : IPhotoFileStorage
+    internal sealed class MemoryStorage : IPhotoFileStorage
     {
         private readonly Dictionary<string, byte[]> files = [];
         public bool FailWrite { get; set; }

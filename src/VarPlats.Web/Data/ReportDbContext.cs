@@ -449,10 +449,16 @@ public sealed class DatabaseReportStore(
 
     // Archived reports leave the map, list, API and nearby hints but GetAsync still returns them for their page.
     // The archive table is only queried when the switch is on, so older schemas keep working.
+    // Flag-hidden reports leave the same reads for everyone (also admins and the author, who reach them through the
+    // moderation queue and the report page); content_flags is only named while HideOnFlag is on.
     private IQueryable<ReportEntity> Visible(ReportDbContext db, IQueryable<ReportEntity> query)
-        => mode.Archive
-            ? query.Where(report => !db.ReportArchives.Any(archive => archive.ReportId == report.Id))
-            : query;
+    {
+        if (mode.Archive)
+            query = query.Where(report => !db.ReportArchives.Any(archive => archive.ReportId == report.Id));
+        if (mode.HideOnFlag)
+            query = FlagVisibility.WithoutHiddenReports(db, query, mode.HideOnFlagMinimumFlags);
+        return query;
+    }
 
     // Small areas go through the GiST index on the geography column. Geography polygon edges are great-circle
     // arcs, so the envelope is densified and padded to cover the lat/lon rectangle; the exact rectangle test

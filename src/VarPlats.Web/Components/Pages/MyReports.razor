@@ -23,7 +23,14 @@
     }
     else
     {
-        <p>Inskickade rapporter väntar på granskning och visas offentligt först om de godkänns. Rapporter som en administratör tar bort visas inte längre här.</p>
+        @if (Mode.DirectPublish)
+        {
+            <p>Nya rapporter publiceras direkt utan förhandsgranskning. Om någon anmäler en rapport kan den döljas i väntan på granskning; du ser den fortfarande på rapportsidan. Rapporter som en administratör tar bort visas inte längre här.</p>
+        }
+        else
+        {
+            <p>Inskickade rapporter väntar på granskning och visas offentligt först om de godkänns. Rapporter som en administratör tar bort visas inte längre här.</p>
+        }
         <p>Om kontot tas bort behålls rapporterna utan kopplingen till kontot. Undvik alltid personuppgifter i fritexten.</p>
         @if (error is not null)
         {
@@ -51,6 +58,10 @@
                             @if (reportPhotoIds.Contains(submission.Report.Id))
                             {
                                 <img class="report-photo" src="@($"/photos/reports/{submission.Report.Id}")" alt="Uppladdad bild till din rapport" loading="lazy" />
+                            }
+                            @if (submission.ReviewStatus == ReportReviewStatus.Approved)
+                            {
+                                <p><a href="@($"/rapporter/{submission.Report.Id}")">Visa rapportsidan</a></p>
                             }
                         </article>
                     </li>
@@ -105,10 +116,10 @@
         finally { loading = false; }
     }
 
-    private static string ReviewName(ReportReviewStatus review) => review switch
+    private string ReviewName(ReportReviewStatus review) => review switch
     {
         ReportReviewStatus.Pending => "Väntar på granskning",
-        ReportReviewStatus.Approved => "Godkänd och publicerad",
+        ReportReviewStatus.Approved => Mode.DirectPublish ? "Publicerad" : "Godkänd och publicerad",
         ReportReviewStatus.Rejected => "Avvisad",
         _ => "Okänd granskningsstatus"
     };

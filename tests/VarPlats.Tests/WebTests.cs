@@ -242,6 +242,135 @@ public sealed class WebTests
     }
 
     [Fact]
+    public void DirectPublishRequiresTheWorkflowAndPublicWrites()
+    {
+        var store = new ReportWorkflowTestStore();
+        using var factory = CreateWorkflowFactory(store, new()
+        {
+            ["Reporting:DirectPublish"] = "true"
+        }).WithWebHostBuilder(builder => builder.UseSetting("Reporting:PublicWrites", "false"));
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Reporting:DirectPublish", exception.Message);
+    }
+
+    [Fact]
+    public void HideOnFlagRequiresFlags()
+    {
+        using var factory = CreateWorkflowFactory(new ReportWorkflowTestStore(), new()
+        {
+            ["Reporting:HideOnFlag"] = "true"
+        });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Reporting:HideOnFlag", exception.Message);
+    }
+
+    [Fact]
+    public void InvalidHideThresholdStopsStartupEvenWhenTheSwitchIsOff()
+    {
+        using var factory = CreateFactory("Production", new() { ["HideOnFlag:MinimumFlags"] = "0" });
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("HideOnFlag:MinimumFlags", exception.Message);
+    }
+
+    [Fact]
+    public async Task DirectPublishTellsMembersThatReportsAreNotReviewedFirst()
+    {
+        await using var factory = CreateWorkflowFactory(new ReportWorkflowTestStore(), new()
+        {
+            ["Reporting:DirectPublish"] = "true"
+        });
+        using var client = factory.CreateClient();
+        Assert.Contains("Rapportering utan förhandsgranskning", WebUtility.HtmlDecode(await client.GetStringAsync("/")));
+        client.DefaultRequestHeaders.Add("X-Synthetic-Role", "Member");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", Guid.NewGuid().ToString());
+        // The report form itself only renders after a click, so the prerendered page shows the mode notice.
+        Assert.Contains("visas direkt och har inte granskats i förväg",
+            WebUtility.HtmlDecode(await client.GetStringAsync("/")));
+        Assert.Contains("Nya rapporter publiceras direkt", WebUtility.HtmlDecode(
+            await client.GetStringAsync("/mina-rapporter")));
+    }
+
+    [Fact]
+    public async Task HiddenReportShowsOnlyANeutralNoteExceptToAdminsAndTheAuthor()
+    {
+        var store = new ReportWorkflowTestStore();
+        var authorId = Guid.NewGuid();
+        var draft = ReportTests.ValidDraft();
+        draft.Title = "Syntetisk anmäld rapport";
+        draft.Description = "Syntetisk beskrivning som har anmälts.";
+        var report = await store.SubmitAsync(authorId, draft);
+        Assert.True(await store.DecideAsync(report.Id, ReportReviewStatus.Approved));
+        var flags = new HiddenContentStore
+        {
+            Hidden = new(true, false, new HashSet<Guid>()),
+            IsAuthor = viewer => viewer == authorId
+        };
+        await using var factory = CreateHideOnFlagFactory(store, flags);
+        using var client = factory.CreateClient();
+        var url = $"/rapporter/{report.Id}";
+
+        var anonymousPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("Dolt i väntan på granskning", anonymousPage);
+        Assert.DoesNotContain(draft.Title, anonymousPage);
+        Assert.DoesNotContain(draft.Description, anonymousPage);
+        var link = WebUtility.HtmlDecode(await client.GetStringAsync($"/?rapport={report.Id}"));
+        Assert.Contains("dold i väntan på granskning", link);
+        Assert.DoesNotContain("Länkad rapport:", link);
+
+        client.DefaultRequestHeaders.Add("X-Synthetic-Role", "Member");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", Guid.NewGuid().ToString());
+        var otherPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("Dolt i väntan på granskning", otherPage);
+        Assert.DoesNotContain(draft.Title, otherPage);
+
+        client.DefaultRequestHeaders.Remove("X-Synthetic-Id");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", authorId.ToString());
+        var authorPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains(draft.Title, authorPage);
+        Assert.Contains("Dolt i väntan på granskning", authorPage);
+        Assert.Contains("Du ser den eftersom den är din", authorPage);
+        Assert.Contains("tar inte emot nya åtgärdsuppgifter", authorPage);
+        Assert.DoesNotContain("Visa på kartan", authorPage);
+
+        client.DefaultRequestHeaders.Remove("X-Synthetic-Role");
+        client.DefaultRequestHeaders.Remove("X-Synthetic-Id");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Role", "Admin");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", Guid.NewGuid().ToString());
+        var adminPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains(draft.Title, adminPage);
+        Assert.Contains("granskningskön", adminPage);
+    }
+
+    [Fact]
+    public async Task HiddenActionTextIsWithheldFromOtherAccountsAndTakesNoConfirmation()
+    {
+        var store = new ReportWorkflowTestStore();
+        var report = await store.SubmitAsync(Guid.NewGuid(), ReportTests.ValidDraft());
+        Assert.True(await store.DecideAsync(report.Id, ReportReviewStatus.Approved));
+        var actionAuthor = Guid.NewGuid();
+        Assert.True(await store.AddAsync(report.Id, actionAuthor,
+            new ReportActionDraft { Description = "Syntetisk anmäld åtgärdstext." }));
+        var action = Assert.Single(await store.ListAsync(report.Id, null));
+        var flags = new HiddenContentStore { Hidden = new(false, false, new HashSet<Guid> { action.Id }) };
+        await using var factory = CreateHideOnFlagFactory(store, flags);
+        using var client = factory.CreateClient();
+        var url = $"/rapporter/{report.Id}";
+
+        client.DefaultRequestHeaders.Add("X-Synthetic-Role", "Member");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", Guid.NewGuid().ToString());
+        var memberPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("Dolt i väntan på granskning", memberPage);
+        Assert.DoesNotContain("Syntetisk anmäld åtgärdstext.", memberPage);
+        Assert.DoesNotContain("Bekräfta uppgiften", memberPage);
+
+        client.DefaultRequestHeaders.Remove("X-Synthetic-Id");
+        client.DefaultRequestHeaders.Add("X-Synthetic-Id", actionAuthor.ToString());
+        var ownPage = WebUtility.HtmlDecode(await client.GetStringAsync(url));
+        Assert.Contains("Syntetisk anmäld åtgärdstext.", ownPage);
+        Assert.Contains("Dolt i väntan på granskning", ownPage);
+    }
+
+    [Fact]
     public void WorkflowRequiresAuthentication()
     {
         using var factory = CreateFactory("Production", new() { ["Reporting:WorkflowEnabled"] = "true" });
@@ -836,6 +965,19 @@ public sealed class WebTests
             services.AddSyntheticTestAuthentication();
         }));
 
+    private static WebApplicationFactory<Program> CreateHideOnFlagFactory(
+        ReportWorkflowTestStore store, HiddenContentStore flags)
+        => CreateWorkflowFactory(store, new()
+        {
+            ["Reporting:FlagsEnabled"] = "true",
+            ["Reporting:HideOnFlag"] = "true",
+            ["Reporting:DirectPublish"] = "true"
+        }).WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IContentFlagStore>();
+            services.AddSingleton<IContentFlagStore>(flags);
+        }));
+
     private sealed class ClientAddressFilter(IPAddress address) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
@@ -867,12 +1009,14 @@ public sealed class WebTests
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlySet<Guid>>(ids.Where(id => id == reportId).ToHashSet());
         public Task<IReadOnlySet<Guid>> VisibleActionIdsAsync(
-            IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default)
+            System.Security.Claims.ClaimsPrincipal viewer, IReadOnlyCollection<Guid> ids,
+            CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlySet<Guid>>(ids.Where(id => id == actionId).ToHashSet());
         public Task<PhotoContent?> ReadReportAsync(
             System.Security.Claims.ClaimsPrincipal viewer, Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult<PhotoContent?>(id == reportId ? new(bytes, "image/png") : null);
-        public Task<PhotoContent?> ReadActionAsync(Guid id, CancellationToken cancellationToken = default)
+        public Task<PhotoContent?> ReadActionAsync(
+            System.Security.Claims.ClaimsPrincipal viewer, Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult<PhotoContent?>(id == actionId ? new(bytes, "image/png") : null);
     }
 }
